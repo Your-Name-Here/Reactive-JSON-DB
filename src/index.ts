@@ -4,7 +4,7 @@ import { FetchQuery, Operators } from "./Query";
 const userSchema: TableSchema = {
     name: "users",
     columns: [
-        { name: 'id', type: "string" },
+        { name: 'id', type: "string", unique: true, autoIncrement: true },
         { name: 'isAdmin', type: "boolean" },
         { name: 'name', type: "string", unique:true },
         { name: 'age', type: "number" },

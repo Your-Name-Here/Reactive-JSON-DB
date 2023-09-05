@@ -24,6 +24,7 @@ type DatabaseOptions = {
 }
 export type Column = {
     name: string,
+    autoIncrement?: boolean,
     type: string,
     required?: boolean
     format?: string
@@ -67,21 +68,21 @@ export type Column = {
 // }
 export class Table {
     private _mutex: Mutex = new Mutex();
-    filePath: string;
     validateSchema: any;
     columns: string[];
     name: string;
     private subscriptions: Set<{query:(QueryObject|FetchQuery),fn:(results: RDBRecord[],updates: SubscriptionParams)=>void, current: RDBRecord[]}> = new Set();
     schema: TableSchema;
     constructor(schema: TableSchema, private filepath: string) {
-        if(!('columns' in schema)) throw new DatabaseError(`Schema for table '${name}' does not have columns defined.`)
+        if(!('columns' in schema)) throw new DatabaseError(`Schema does not have columns defined.`)
         this.name = schema.name;
         this.schema = schema;
         if(!fs.existsSync(this.filepath)) {
             // @ts-ignore
-            console.log(`Creating table ${this.name} with columns: ${Object.keys(schema.schema.columns).join(', ')}`)
-            fs.writeFileSync(this.filePath, JSON.stringify({
+            console.log(`Creating table ${this.name} with columns: ${schema.columns.map(c=>c.name).join(', ')}`)
+            fs.writeFileSync(this.filepath, JSON.stringify({
                 schema: schema,
+                autoIncrement: 0,
                 data: []
             }, null, 2));
         } else {
@@ -118,10 +119,10 @@ export class Table {
             }
         }
         // insert the data
-        const file = fs.readFileSync(this.filePath, "utf-8");
+        const file = fs.readFileSync(this.filepath, "utf-8");
         const parsed = JSON.parse(file);
         parsed.data.push(data);
-        fs.writeFileSync(this.filePath, JSON.stringify(parsed, null, 2));
+        fs.writeFileSync(this.filepath, JSON.stringify(parsed, null, 2));
         this._mutex.unlock();
         return new RDBRecord(data, this);
     }
@@ -187,6 +188,9 @@ export class Table {
     }
     checkColumnName(name:string){
         if (!this.columnNames.includes(name)) throw new QueryError(`Column '${name}' does not exist in table ${this.name}. This is case-sensitive. Valid columns are: ${this.columnNames.join(', ')}`)
+    }
+    get filePath() {
+        return this.filepath;
     }
     get columnNames() {
         return Object.keys(this.schema.columns);
@@ -363,14 +367,14 @@ export class RDatabase {
                 // return this.tables.get(schema.name);
             })
         } else if (options.schemas) {
-            this.directory = path.resolve(__dirname, "./");
+        this.directory = path.resolve(__dirname, "./");
             this.tables = this.create(options.schemas);
         }
     }
     create(schemas:TableSchema[]):Map<string, Table> {
         const ret = new Map();
         schemas.forEach(schema => {
-            const table = new Table( schema, this.directory);
+            const table = new Table( schema, path.resolve(this.directory,`${schema.name}_table.json`));
             ret.set(schema.name, table);
         });
         return ret;

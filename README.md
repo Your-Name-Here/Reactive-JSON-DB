@@ -4,9 +4,9 @@ A self-hosted JSON file database that is reactive similar to Firestore. The proj
 
 The final intended usage will be as an NPM package. I would love the ability to use on the front end with indexDB and/or localStorage.
 
-##TODO:
+## TODO:
 - Set up tests
 - Set up workflow as github actions.
-- - Automated testing
-- - Automated publishing to NPM
-- - Automated Typescript Transpilation
+  - Automated testing
+  - Automated publishing to NPM
+  - Automated Typescript Transpilation

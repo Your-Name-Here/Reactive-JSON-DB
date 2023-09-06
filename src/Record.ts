@@ -30,7 +30,7 @@ export class RDBRecord extends Map<string, any> {
         fs.writeFileSync(this.table.filePath, JSON.stringify(parsed, null, 2));
         return true;
     }
-    async subscribe(fn: (results: any[], updates: SubscriptionParams) => void) {
+    async subscribe(fn: (updates: SubscriptionParams) => void) {
         const query = new FetchQuery({
             column: "id",
             op: Operators.EQ,

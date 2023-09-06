@@ -3,6 +3,7 @@ import { Observable } from "./Utils";
 import { Schema } from "ajv";
 import { QueryError } from "./Errors";
 import { RDBRecord } from "./Record";
+import { SubscriptionParams, Table } from "./Db";
 
 export enum Operators {
     EQ = "=",
@@ -155,7 +156,7 @@ export class FetchQuery {
                     default:
                         break;
                 }
-            }       
+            }
         } else {
             throw new QueryError("Invalid query object");
         }
@@ -270,14 +271,179 @@ export class FetchQuery {
         return new Observable<any>();
     }
 }
-// export class InsertQuery {
-//     constructor(private _query: QueryForInsert) {
-//         if(!this.query) throw new QueryError("Query must be defined");
-//         if(Array.isArray(this.query)) throw new QueryError("Query must be an object; Array given");
-//         if(typeof this.query !== "object") throw new QueryError("Query must be an object: "+typeof this.query)+" given";
-//     }
-//     public get query(): any {
-//         return this._query;
-//     }
-// }
+export class Query {
+    query: QueryObject;
+    private _limit: number|null;
+    private sortingFn: (a: RDBRecord, b: RDBRecord) => number;
+    type: 'fetch'|'insert'|'update'|'delete'
+    data: any;
+    
+    constructor(private table: Table) {
+        this.table = table;
+        this.type = 'fetch';
+        this._limit = null;
+        this.sortingFn = (a, b) => 0;
+        return this;
+    }
+    public find(): RDBRecord[] {
+        const raw = this.table.data.filter((item) => this.filteringFunctions().every((method) => method(item)))
+        if(this._limit) {
+            return raw.sort(this.sortingFn).slice(0, this._limit);
+        }
+        return raw.sort(this.sortingFn);
+    }
+    public where(query: QueryObject): Query {
+        this.query = query;
+        return this;
+    }
+    public set(columns: { name:string, value:any }[]) {
+        this.type = 'update';
+        return this;
+    }
+    public insert(data: InsertQuery){
+        this.type = 'insert';
+        this.data = data;
+        return this;
+    }
+    public delete() {
+        this.type = 'delete';
+    }
+    public limit(limit: number) {
+        this._limit = limit;
+        return this;
+    }
+    /**
+     * Subscribes to the query and returns an unsubscribe function
+     * @param fn function to run when the data is changed
+     * @returns promise - an unsubscribe function
+     */
+    public async subscribe(fn: (updates: SubscriptionParams ) => void) {
+        if(this.type != 'fetch') throw new QueryError(`Only fetch queries can be subscribed to. This query type: '${ this.type }'.`);
+        const query = new FetchQuery(this.query);
+        const sub = await this.table.subscribe(query, fn);
+        return sub.unsubscribe;
+    }
+    public orderBy(column: string, direction: 'ASC'|'DESC') {
+        if(direction == 'ASC') this.sortingFn = (a, b) => a.get(column) - b.get(column);
+        else this.sortingFn = (a, b) => b.get(column) - a.get(column);
+        return this;
+    }
+
+    filteringFunctions(): ((item: RDBRecord) => boolean)[] {
+        const functions = [];
+        if ( 'column' in this.query ) {
+            const { column, value, op } = this.query as QueryObjectWithKey;
+            switch (op) {
+            case Operators.EQ:
+                functions.push((item:RDBRecord) => item.get(column) === value);
+                break;
+            case Operators.NE:
+                functions.push((item:RDBRecord) => item.get(column) !== value);
+                break;
+            case Operators.GT:
+                functions.push((item:RDBRecord) => item.get(column) > value);
+                break;
+            case Operators.GTE:
+                functions.push((item:RDBRecord) => item.get(column) >= value);
+                break;
+            case Operators.LT:
+                functions.push((item:RDBRecord) => item.get(column) < value);
+                break;
+            case Operators.LTE:
+                functions.push((item:RDBRecord) => item.get(column) <= value);
+                break;
+            case Operators.IN:
+                functions.push((item:RDBRecord) => item.get(column).toLowerCase().includes(value.toLowerCase()));
+                break;
+            // Handle other operators as needed.
+            default:
+                break;
+            }
+        } else if( 'and' in this.query ) {
+            for( const subQuery of this.query.and) {
+                switch (subQuery.op) {
+                    case Operators.EQ:
+                        functions.push((item:RDBRecord) => item.get(subQuery.column) == subQuery.value);
+                        break;
+                    case Operators.NE:
+                        functions.push((item:RDBRecord) => item.get(subQuery.column) != subQuery.value);
+                        break;
+                    case Operators.GT:
+                        functions.push((item:RDBRecord) => item.get(subQuery.column) > subQuery.value);
+                        break;
+                    case Operators.GTE:
+                        functions.push((item:RDBRecord) => item.get(subQuery.column) >= subQuery.value);
+                        break;
+                    case Operators.LT:
+                        functions.push((item:RDBRecord) => item.get(subQuery.column) < subQuery.value);
+                        break;
+                    case Operators.LTE:
+                        functions.push((item:RDBRecord) => item.get(subQuery.column) <= subQuery.value);
+                        break;
+                    case Operators.IN:
+                        functions.push((item:RDBRecord) => subQuery.value.includes(item.get(subQuery.column)));
+                        break;
+                    case Operators.NIN:
+                        functions.push((item:RDBRecord) => !subQuery.value.includes(item.get(subQuery.column)));
+                        break;
+                    case Operators.REGEX:
+                        functions.push((item:RDBRecord) => new RegExp(subQuery.value).test(item.get(subQuery.column)));
+                        break;
+                    default:
+                        break;
+                }
+            }
+        } else if ( 'or' in this.query ) {
+            for( const subQuery of this.query.or) {
+                switch (subQuery.op) {
+                    case Operators.EQ:
+                        functions.push((item:RDBRecord) => item.get(subQuery.column) == subQuery.value);
+                        break;
+                    case Operators.NE:
+                        functions.push((item:RDBRecord) => item.get(subQuery.column) != subQuery.value);
+                        break;
+                    case Operators.GT:
+                        functions.push((item:RDBRecord) => item.get(subQuery.column) > subQuery.value);
+                        break;
+                    case Operators.GTE:
+                        functions.push((item:RDBRecord) => item.get(subQuery.column) >= subQuery.value);
+                        break;
+                    case Operators.LT:
+                        functions.push((item:RDBRecord) => item.get(subQuery.column) < subQuery.value);
+                        break;
+                    case Operators.LTE:
+                        functions.push((item:RDBRecord) => item.get(subQuery.column) <= subQuery.value);
+                        break;
+                    case Operators.IN:
+                        functions.push((item:RDBRecord) => subQuery.value.includes(item.get(subQuery.column)));
+                        break;
+                    case Operators.NIN:
+                        functions.push((item:RDBRecord) => !subQuery.value.includes(item.get(subQuery.column)));
+                        break;
+                    case Operators.REGEX:
+                        functions.push((item:RDBRecord) => new RegExp(subQuery.value).test(item.get(subQuery.column)));
+                        break;
+                    default:
+                        break;
+                }
+            }   
+        } else {
+            throw new QueryError("Invalid query object");
+        }
+        return functions;
+    }
+    public async execute(){
+        if(this.type == 'fetch') return this.find();
+        if(this.type == 'insert') {
+            if(this.data) return await this.table.insert(this.data);
+            else throw new QueryError("No data to insert");
+        }
+        const fetchQuery = new FetchQuery(this.query);
+        if(this.type == 'update') {
+            if (this.data ) return this.table.update(fetchQuery, this.data);
+            else throw new QueryError("No data to update");
+        }
+        else if(this.type == 'delete') return this.table.delete( fetchQuery ); // This doesnt respect limiting or sorting
+    }
+}
 export type InsertQuery = Record<string, any>

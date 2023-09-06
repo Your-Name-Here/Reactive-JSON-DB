@@ -1,13 +1,10 @@
 import { Mutex } from "./Utils";
-import { FetchQuery, InsertQuery, Operators, QueryForInsert, QueryObject, QueryObjectWithKey } from "./Query";
-const Ajv = require("ajv");
-const ajv = new Ajv();
-import addFormats from "ajv-formats"
-import { DatabaseError, QueryError, SchemaError } from "./Errors";
+import { FetchQuery, InsertQuery, QueryForInsert, QueryObject } from "./Query";
+import { DatabaseError, QueryError } from "./Errors";
 import { RDBRecord } from "./Record";
+import { ValidateArrayLength, ValidateBoolean, ValidateEmail, ValidateISODate, ValidateNumeric, ValidateString, ValidateURL, ValidationType } from "./Validations";
 const fs = require("fs");
 const path = require("path");
-addFormats(ajv)
 
 export type SubscriptionParams = {
     added: any[],
@@ -25,7 +22,8 @@ type DatabaseOptions = {
 export type Column = {
     name: string,
     autoIncrement?: boolean,
-    type: string,
+    type: ValidationType,
+    default?: any
     required?: boolean
     format?: string
     unique?: boolean
@@ -34,49 +32,16 @@ export type Column = {
     maxLength?: number
     minimum?: number
     maximum?: number
-    validationFn?: (value: any)=>boolean
 }
-// export class Schema {
-//     customValidateFns:Map<string, (value: any)=>boolean> = new Map();
-//     constructor(public name:string, public columns: Column[]) {
-
-//     }
-//     get ColumnNames() {
-//         return this.columns.map((item) => item.name);
-//     }
-//     get requiredColumns() {
-//         return this.columns.filter((item) => item.required);
-//     }
-//     validate(data: object) {
-//         this.columns.forEach((item) => {
-//             if (!(item.name in data)) throw new SchemaError(`Column ${item.name} is required but was not provided`)
-//             // check the type
-//             const type = item.type;
-//             if (typeof data[item.name] != type) throw new SchemaError(`Column ${item.name} is of type ${type} but received type ${typeof data[item.name]}`)
-//             // check the validationFn
-//             if(item.validationFn){
-//                 if(!item.validationFn(data[item.name])) throw new DatabaseError(`Column ${item.name} failed custom validation function`)
-//             }
-//         })
-//     }
-//     toJSON(){
-//         return {
-//             name: this.name,
-//             columns: Object.fromEntries(this.columns.map((item)=>[item.name, item])),
-//         }
-//     }
-// }
 export class Table {
     private _mutex: Mutex = new Mutex();
-    validateSchema: any;
     columns: string[];
     name: string;
-    private subscriptions: Set<{query:(QueryObject|FetchQuery),fn:(results: RDBRecord[],updates: SubscriptionParams)=>void, current: RDBRecord[]}> = new Set();
-    schema: TableSchema;
-    constructor(schema: TableSchema, private filepath: string) {
+    private subscriptions: Set<{query:(QueryObject|FetchQuery),fn:(updates: SubscriptionParams)=>void, current: RDBRecord[]}> = new Set();
+    // private readonly schema:  TableSchema;
+    constructor(private readonly schema: TableSchema, private filepath: string) {
         if(!('columns' in schema)) throw new DatabaseError(`Schema does not have columns defined.`)
         this.name = schema.name;
-        this.schema = schema;
         if(!fs.existsSync(this.filepath)) {
             // @ts-ignore
             console.log(`Creating table ${this.name} with columns: ${schema.columns.map(c=>c.name).join(', ')}`)
@@ -93,40 +58,39 @@ export class Table {
         await this._mutex.lock();
         // validate data against schema
         const columns = Object.keys(data);
-        // get the highest id
-        const highestID = this.data.reduce((acc, item)=>{
-            if(item.id > acc) return item.id;
-            return acc;
-        }, 0);
-        data.id = (Number(highestID) + 1).toString();
+        data.id = await this.getInsertID() + 1;
         Object.keys(this.schema.columns).filter( c=>this.schema.columns[c].required).forEach(item => {
-            if(!(item in columns)) throw new Error(`Error inserting into table ${this.name}: Column '${item}' is required but was not provided. This is case-sensitive. Valid columns are: ${this.columns.join(', ')}`)
+            if(!(item in columns)) throw new Error(`Error inserting into table ${this.name}: Column '${item}' is required but was not provided. This is case-sensitive. Valid columns are: ${this.columnNames.join(', ')}`)
         });
         for(const columnName of columns){
-            if(!this.columns.includes(columnName)) throw new Error(`Error inserting into table ${this.name}: Column '${columnName}' does not exist in table ${this.name}. This is case-sensitive. Valid columns are: ${this.columns.join(', ')}`)
+            const column = this.schema.columns.filter(c=>c.name == columnName)[0];
+            if(!this.columnNames.includes(columnName)) throw new Error(`Error inserting into table ${this.name}: Column '${columnName}' does not exist in table ${this.name}. This is case-sensitive. Valid columns are: ${this.columnNames.join(', ')}`)
                 if(this.schema.columns[columnName]?.unique){
                     const found = this.data.find((item)=>item[columnName] === data[columnName]);
                     if(found) throw new Error(`Error inserting into table ${this.name}: Column '${columnName}' is unique but a record with this value already exists`)
                 }
-            const type = this.schema.columns[columnName].type;
-            if(typeof data[columnName] != type) throw new Error(`Error inserting into table ${this.name}: Column '${columnName}' is of type '${type}' but received type '${typeof data[columnName]}'`)
 
-            if(this.schema.columns[columnName]?.unique){
+            // if(typeof data[columnName] != type) throw new Error(`Error inserting into table ${this.name}: Column '${columnName}' is of type '${type}' but received type '${typeof data[columnName]}'`)
+            if(!this.validate(data[columnName], column)) throw new Error(`Error inserting into table ${this.name}: Column '${columnName}' failed validation`)
+
+            if(column.unique){
                 const found = this.data.find((item)=>{
                     return item.get(columnName) == data[columnName]
                 });
                 if(found) throw new Error(`Error inserting into table ${this.name}: Column '${columnName}' is unique but a record with this '${columnName}: ${data[columnName]}' already exists: ${found.get('id')}`)
             }
+            
         }
         // insert the data
         const file = fs.readFileSync(this.filepath, "utf-8");
         const parsed = JSON.parse(file);
         parsed.data.push(data);
         fs.writeFileSync(this.filepath, JSON.stringify(parsed, null, 2));
+        await this.incrementInsertID(); 
         this._mutex.unlock();
         return new RDBRecord(data, this);
     }
-    async remove(query: FetchQuery): Promise<boolean> {
+    private async remove(query: FetchQuery): Promise<boolean> {
         const records = await this.find(query)
         if(records.length === 0) return false;
         for(const record of records){
@@ -183,17 +147,52 @@ export class Table {
             return new RDBRecord(item, this);
         });
     }
+    private validate(data: any, against: Column) {
+        switch (against.type) {
+            case ValidationType.EMAIL:
+                return ValidateEmail(data);
+            case ValidationType.DATE:
+                return ValidateISODate(data);
+            case ValidationType.URL:
+                return ValidateURL(data);
+            case ValidationType.ARRAY:
+                return ValidateArrayLength(data, against?.minLength||1, against?.maxLength||255);
+            case ValidationType.STRING:
+                return ValidateString(data, against?.minLength||1, against?.maxLength||5000); // What is a reasonable maximum here?
+            case ValidationType.NUMBER:
+                return ValidateNumeric(data, against?.minimum||0, against?.maximum||1999999999999999);
+            case ValidationType.BOOLEAN:
+                return ValidateBoolean(data);
+        }
+    }
     private checkSchema(data: string[]) {
         data.forEach(this.checkColumnName.bind(this));
     }
-    checkColumnName(name:string){
+    private checkColumnName(name:string){
         if (!this.columnNames.includes(name)) throw new QueryError(`Column '${name}' does not exist in table ${this.name}. This is case-sensitive. Valid columns are: ${this.columnNames.join(', ')}`)
     }
     get filePath() {
         return this.filepath;
     }
     get columnNames() {
-        return Object.keys(this.schema.columns);
+        return this.schema.columns.map((item) => item.name);
+    }
+    get size() {
+        return this.data.length;
+    }
+    private async getInsertID() {
+        const file = fs.readFileSync(this.filepath, "utf-8");
+        const parsed = JSON.parse(file);
+        const highestID:number = parsed.lastInsertID;
+        return highestID;
+    }
+    private async incrementInsertID() {
+        const file = fs.readFileSync(this.filepath, "utf-8");
+        const parsed = JSON.parse(file);
+        const highestID:number = parsed.lastInsertID;
+        parsed.lastInsertID = highestID + 1;
+        fs.writeFileSync(this.filepath, JSON.stringify(parsed, null, 2));
+        return highestID + 1;
     }
     async findOne(query: FetchQuery):Promise<RDBRecord> {
         return await this.find(query)[0];
@@ -203,6 +202,7 @@ export class Table {
     }
     drop(): void {
         // delete the file
+        throw new Error("Drop Table method not implemented.");
     }
     private runSubscriptions() {
         this.subscriptions.forEach(subscription => {
@@ -220,7 +220,7 @@ export class Table {
                     }
                     return false
                 }
-                subscription.fn( newData, {
+                subscription.fn( {
                     added: newData.filter(addedFn),
                     removed: subscription.current.filter(removedFn),
                     updated: newData.filter(updatedFn)
@@ -229,7 +229,7 @@ export class Table {
             }
         });
     }
-    async subscribe(query: QueryObject|FetchQuery ,fn: (results: RDBRecord[], updates: SubscriptionParams) => void) {
+    async subscribe(query: QueryObject|FetchQuery ,fn: (updates: SubscriptionParams) => void) {
         if(!this.subscriptions.size){
             // start watching the file
             fs.watchFile(this.filepath,{interval: 1000}, (curr, prev) => {
@@ -237,7 +237,7 @@ export class Table {
             });
         }
         // get the data
-        let data = null; 
+        let data:RDBRecord[] = []; 
         if(query instanceof FetchQuery){
             this.checkSchema(query.affectingColumns());
             const filteringFunctions = query.filteringFunctions();
@@ -255,12 +255,13 @@ export class Table {
                     return filteringFunctions[0](item)
                 });
             }
-            await fn(data, {added: data, removed: [], updated: []})
+            // await fn(data, {added: data, removed: [], updated: []})
             this.subscriptions.add({query, fn, current: data});
         } else {
             debugger
         }
         return {
+            records: data,
             unsubscribe: ()=>{
                 this.subscriptions.delete({query, fn, current: data});
             }

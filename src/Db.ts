@@ -142,7 +142,7 @@ export class Table {
             return true;
         })
     }
-    private get data(): RDBRecord[] {
+    get data(): RDBRecord[] {
         return JSON.parse(fs.readFileSync(this.filepath, "utf-8")).data.map((item:object) => {
             return new RDBRecord(item, this);
         });

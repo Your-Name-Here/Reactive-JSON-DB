@@ -3,7 +3,7 @@ import { FetchQuery, Operators } from "./Query";
 import fs from "fs";
 
 export class RDBRecord extends Map<string, any> {
-    constructor(data: object, public table: Table) {
+    constructor(data: object, private table: Table) {
         super();
         Object.keys(data).forEach((item) => {
             this.set(item, data[item]);
@@ -42,6 +42,6 @@ export class RDBRecord extends Map<string, any> {
         return Object.fromEntries(this.entries())
     }
     toString(){
-        return JSON.stringify(this);
+        return JSON.stringify(Object.fromEntries(this.entries()));
     }
 }

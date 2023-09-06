@@ -1,6 +1,5 @@
-import validation from "ajv/dist/vocabularies/validation";
 import { RDatabase, TableSchema } from "./Db";
-import { FetchQuery, Operators } from "./Query";
+import { FetchQuery, Operators, Query } from "./Query";
 import { ValidationType } from "./Validations";
 
 const userSchema: TableSchema = {
@@ -22,99 +21,85 @@ const database = new RDatabase({
         userSchema
     ]
 });
+let unsubscribe;
 // const db = database.create([
 //     userSchema,
 //     postsSchema
 // ]);
-// db.users.insert({
-//     id: "124",
-//     name: "Noah",
-//     age: 35,
-//     email: "archdeacon84@gmail.com",
-//     password: "password123",
-//     createdAt: new Date().toISOString(),
-//     updatedAt: new Date().toISOString(),
-// }).then((data) => {
-//     console.log(data.id, 'inserted');
-    
-//     db.users.update(new FetchQuery({
-//         column: "id",
-//         op: Operators.EQ,
-//         value: "123",
-//     }), {
-//         name: "test",
-//     }).then((data) => {});
-
-// }).catch(console.log);
 // console.log("Finding the Admins...");
-const query = new FetchQuery({
-    value: 'gmail.com',
-    op: Operators.IN,
-    column: "email",
-});
-const query2 = new FetchQuery({
-    value: '30',
-    op: Operators.GT,
-    column: "age",
-});
-const adminQuery = new FetchQuery({
-    column: "isAdmin",
-    op: Operators.EQ,
-    value: true,
-});
-const nonAdminQuery = new FetchQuery({
+// const query = new FetchQuery({
+//     value: 'gmail.com',
+//     op: Operators.IN,
+//     column: "email",
+// });
+const users = database.tables.get('users');
+// const oldPeople = new Query(users)
+// .where({
+//     column: "age",
+//     op: Operators.GT,
+//     value: 30,
+// })
+// .orderBy("age", "ASC")
+// .subscribe((updates) => {
+//     updates.added.forEach((user) => {
+//         console.log(`New User: ${user.get('name')}`);
+//     });
+//     updates.removed.forEach((user) => {
+//         console.log(`User Removed: ${user.get('name')}`);
+//     });
+//     updates.updated.forEach((user) => {
+//         console.log(`Update to User: ${user.get('name')}`);
+//     });
+// });
+const regularUsers = new Query(users)
+.where({
     column: "isAdmin",
     op: Operators.EQ,
     value: false,
 });
-
-let unsubscribe;
-const users = database.tables.get('users');
-users.subscribe(query2, (updates) => {
-    updates.added.forEach((user) => {
-        console.log(`New Admin: ${user.get('name')}`);
+regularUsers.subscribe((updates) => {
+    // const _users = regularUsers.find();
+    // updates.added.forEach((user) => {
+    //     console.log(`New User: ${user.get('name')}`);
+    // });
+    // updates.removed.forEach((user) => {
+    //     console.log(`User Removed: ${user.get('name')}`);
+    // });
+    // updates.updated.forEach((user) => {
+    //     console.log(`Update to User: ${user.get('name')}`);
+    // });
+    // console.log("Regular Users:", _users.map((user) => user.get('name')).join(", "));
+});
+const adminsQuery = new Query(users)
+.where({
+    column: "isAdmin",
+    op: Operators.EQ,
+    value: true,
+});
+const admins = adminsQuery.find();
+const regUsers = regularUsers.find();
+console.log("Admins:", admins.map((user) => user.get('name')).join(", "));
+console.log("Regular Users:", regUsers.map((user) => user.get('name')).join(", "));
+adminsQuery.subscribe(updates=>{
+    const _admins = adminsQuery.find();
+    if(updates.added.length > 0) {
+        // console.log("New Admins Added");
+        console.log(updates.added.length, "New admins:", updates.added.map((user) => user.get('name')).join(", "));
+    }
+    else if(updates.removed.length > 0) {
+        // console.log("Admins Removed");
+        console.log(updates.removed.length, "Admins removed", updates.removed.map((user) => user.get('name')).join(", "));
+    }
+    else if(updates.updated.length > 0) {
+        // console.log("Admins Updated");
+        console.log(updates.updated.length, "Admins Updated", updates.updated.map((user) => user.get('name')).join(", "));
+    }
+    const _users = regularUsers.find();
+    console.clear();
+    console.log('Admins');
+    _admins.forEach((user) => {
+        console.log('    -',user.get('name'));
+        // console.log("Admins:", _admins.map((user) => user.get('name')+' ('+user.get('email')+')').join(", "));
     });
-    updates.removed.forEach((user) => {
-        console.log(`Admin Removed: ${user.get('name')}`);
-    });
-    updates.updated.forEach((user) => {
-        console.log(`Update to Admin: ${user.get('name')}`);
-    });
-}).then(results=>{
-    unsubscribe = results.unsubscribe;
-    console.log("Subscribed to records that are older than 30:", results.records.length, 'records found');
-}).catch(console.log);
-// users.insert({
-//     name: "Rebekah",
-//     isAdmin: false,
-//     age: 34,
-//     email: "bekah119a@gmail.com",
-//     password: "password123",
-//     createdAt: new Date().toISOString(),
-//     updatedAt: new Date().toISOString(),
-// }).catch(error=>{
-//     console.error('Failed to insert Rebekah: ', error.message);
-// });
-// database.tables.get('users').remove(new FetchQuery({
-//     value: "test",
-//     op: Operators.IN,
-//     column: "name",
-// })).then((success) => {
-//     console.log(`Records ${(success ? "removed" : "not removed")} successfully`);
-// }).catch(console.error);
-// users.subscribe(query, (newData, updates) => {
-//     // console.log("Resultset changed", updates);
-    
-//     updates.added.forEach((user) => {
-//         console.log(`New old person: ${user.get('name')} is ${user.get('age')}`);
-//     });
-//     updates.removed.forEach((user) => {
-//         console.log(`No longer old: ${user.get('name')}`);
-//     });
-//     updates.updated.forEach((user) => {
-//         console.log(`Updated old person: ${user.get('name')} is ${user.get('age')}`);
-//     });
-// }).then(u=>unsubscribe = u).catch(console.log);
-// db.users.update(adminQuery, {
-//     isAdmin: false
-// }).then((data) => {});
+    console.log("Regular Users:", _users.map((user) => user.get('name')).join(", "));
+})

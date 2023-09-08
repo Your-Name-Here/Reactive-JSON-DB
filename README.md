@@ -1,4 +1,11 @@
 # Reactive-JSON-DB
+![GitHub package.json version (branch)](https://img.shields.io/github/package-json/v/Your-Name-Here/Reactive-JSON-DB/main) ![GitHub](https://img.shields.io/github/license/Your-Name-Here/Reactive-JSON-DB) ![GitHub repo size](https://img.shields.io/github/repo-size/Your-Name-Here/Reactive-JSON-DB?label=Repo%20Size) ![GitHub issues](https://img.shields.io/github/issues-raw/Your-Name-Here/Reactive-JSON-DB) ![GitHub closed issues](https://img.shields.io/github/issues-closed-raw/Your-Name-Here/Reactive-JSON-DB) ![GitHub last commit (by committer)](https://img.shields.io/github/last-commit/Your-Name-Here/Reactive-JSON-DB) ![GitHub commit activity (branch)](https://img.shields.io/github/commit-activity/m/Your-Name-Here/Reactive-JSON-DB)
+
+
+
+
+
+
 
 A self-hosted JSON file database that is reactive similar to Firestore. The project was born from a frustration with the currently available options. Most self-hosted solutions require Docker which can be a pain to set up and or use. This will solve that because this package will have a smaller footprint and only require node.   
 

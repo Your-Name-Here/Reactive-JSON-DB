@@ -1,5 +1,5 @@
 import { Mutex } from "./Utils";
-import { FetchQuery, InsertQuery, QueryForInsert, QueryObject } from "./Query";
+import { InsertQuery, Query } from "./Query";
 import { DatabaseError, QueryError } from "./Errors";
 import { RDBRecord } from "./Record";
 import { ValidateArrayLength, ValidateBoolean, ValidateEmail, ValidateISODate, ValidateNumeric, ValidateString, ValidateURL, ValidationType } from "./Validations";
@@ -33,12 +33,17 @@ export type Column = {
     minimum?: number
     maximum?: number
 }
+// I need a type for the data that can be inserted into the table
+
+export type InsertData = {
+    [key: string]: any
+}
 export class Table {
     private _mutex: Mutex = new Mutex();
-    columns: string[];
+    columns: Column[];
     name: string;
-    private subscriptions: Set<{query:(QueryObject|FetchQuery),fn:(updates: SubscriptionParams)=>void, current: RDBRecord[]}> = new Set();
-    // private readonly schema:  TableSchema;
+    private dropped: boolean = false;
+    subscriptions: {current: RDBRecord[], query: Query}[] = [];
     constructor(private readonly schema: TableSchema, private filepath: string) {
         if(!('columns' in schema)) throw new DatabaseError(`Schema does not have columns defined.`)
         this.name = schema.name;
@@ -53,25 +58,29 @@ export class Table {
         } else {
             console.log(`Table '${this.name}' exists`)
         }
+        this.columns = schema.columns;
     }
-    async insert(data: QueryForInsert) {
+    async insert(data:InsertData) {
+        if(this.dropped) throw new QueryError(`Table '${this.name}' no longer exists`)
         await this._mutex.lock();
         // validate data against schema
         const columns = Object.keys(data);
         data.id = await this.getInsertID() + 1;
-        Object.keys(this.schema.columns).filter( c=>this.schema.columns[c].required).forEach(item => {
-            if(!(item in columns)) throw new Error(`Error inserting into table ${this.name}: Column '${item}' is required but was not provided. This is case-sensitive. Valid columns are: ${this.columnNames.join(', ')}`)
+        data.createdAt = new Date().toISOString();
+        data.updatedAt = new Date().toISOString();
+        const requiredColumns = this.schema.columns.filter( c=>c.required);
+        requiredColumns.forEach(column => {
+            if(!columns.includes(column.name)) throw new QueryError(`Error inserting into table ${this.name}: Column '${column.name}' is required but was not provided. This is case-sensitive. Valid columns are: ${this.schema.columns.map(c=>c.name).join(', ')}`)
         });
-        for(const columnName of columns){
+        for(const columnName of this.schema.columns.map((item)=>item.name)){
             const column = this.schema.columns.filter(c=>c.name == columnName)[0];
             if(!this.columnNames.includes(columnName)) throw new Error(`Error inserting into table ${this.name}: Column '${columnName}' does not exist in table ${this.name}. This is case-sensitive. Valid columns are: ${this.columnNames.join(', ')}`)
-                if(this.schema.columns[columnName]?.unique){
-                    const found = this.data.find((item)=>item[columnName] === data[columnName]);
-                    if(found) throw new Error(`Error inserting into table ${this.name}: Column '${columnName}' is unique but a record with this value already exists`)
+                if(column?.unique){
+                    const found = this.data.find((item)=>item.get(columnName) == data[columnName]);
+                    if(found) throw new QueryError(`Error inserting into table ${this.name}: Column '${columnName}' is unique but a record with this value already exists`)
                 }
 
-            // if(typeof data[columnName] != type) throw new Error(`Error inserting into table ${this.name}: Column '${columnName}' is of type '${type}' but received type '${typeof data[columnName]}'`)
-            if(!this.validate(data[columnName], column)) throw new Error(`Error inserting into table ${this.name}: Column '${columnName}' failed validation`)
+            if(!this.validate(data[columnName], column)) throw new QueryError(`Error inserting into table ${this.name}: Column '${columnName}' failed validation`)
 
             if(column.unique){
                 const found = this.data.find((item)=>{
@@ -79,7 +88,6 @@ export class Table {
                 });
                 if(found) throw new Error(`Error inserting into table ${this.name}: Column '${columnName}' is unique but a record with this '${columnName}: ${data[columnName]}' already exists: ${found.get('id')}`)
             }
-            
         }
         // insert the data
         const file = fs.readFileSync(this.filepath, "utf-8");
@@ -90,64 +98,48 @@ export class Table {
         this._mutex.unlock();
         return new RDBRecord(data, this);
     }
-    private async remove(query: FetchQuery): Promise<boolean> {
-        const records = await this.find(query)
-        if(records.length === 0) return false;
-        for(const record of records){
-            if(!(await record.remove())) return false;
-        }
-        return true;
+    /**
+     * Removes a record from the table
+     * @param query 
+     * @returns {number} - the number of rows affected
+     */
+    async remove(query: RDBRecord): Promise<number> {
+        if(this.dropped) throw new QueryError(`Table '${this.name}' no longer exists`)
+        this._mutex.lock();
+        this.data.splice(this.data.findIndex((item)=>item.id == query.id), 1);
+        const file = fs.readFileSync(this.filepath, "utf-8");
+        const parsed = JSON.parse(file);
+        const precount = parsed.data.length;
+        parsed.data = this.data;
+        fs.writeFileSync(this.filepath, JSON.stringify(parsed, null, 2));
+        this._mutex.unlock();
+        return precount - parsed.data.length;
     }
-    async update(query:FetchQuery, data: InsertQuery) {
+    async update(query:Query, data: InsertQuery) {
+        if(this.dropped) throw new QueryError(`Table '${this.name}' no longer exists`)
         await this._mutex.lock();
         const records = await this.find(query);
         let affectedRows = 0;
         records.forEach((record)=>{
             Object.keys(data).forEach((key)=>{
-                record.set(key, data[key]);
+                record.update('updatedAt', new Date().toISOString(), false)
+                record.update(key, data[key], false);
             })
             if(record.save()) affectedRows++;
         });
         this._mutex.unlock();
         return affectedRows
     }
-    async find(query: QueryObject|FetchQuery) {
-        // const data = fs.readFileSync(this.filePath, "utf-8");
-        if(query instanceof FetchQuery){
-            this.checkSchema(query.affectingColumns());
-        }
-        return this.filter(query);
-    }
-    private filter(query: QueryObject|FetchQuery){
-        // get the filtering function()
-        if(query instanceof FetchQuery){
-            const filteringFunctions = query.filteringFunctions();
-            if(filteringFunctions.length === 0) throw new QueryError("No filtering functions found")
-            if( 'and' in query.query ){
-                return this.data.filter(item => {
-                    return filteringFunctions.every(fn => fn(item))
-                });
-            } else if ( 'or' in query.query ){
-                return this.data.filter(item => {
-                    return filteringFunctions.some(fn => fn(item))
-                });
-            } else {
-                return this.data.filter(item => {
-                    return filteringFunctions[0](item)
-                });
-            }
-        }
-        debugger
-        return this.data.filter(item => {
-            return true;
-        })
+    async find(query: Query) {
+        if(this.dropped) throw new QueryError(`Table '${this.name}' no longer exists`)
+        return await query.find();
     }
     get data(): RDBRecord[] {
         return JSON.parse(fs.readFileSync(this.filepath, "utf-8")).data.map((item:object) => {
             return new RDBRecord(item, this);
         });
     }
-    private validate(data: any, against: Column) {
+    validate(data: any, against: Column) {
         switch (against.type) {
             case ValidationType.EMAIL:
                 return ValidateEmail(data);
@@ -164,12 +156,6 @@ export class Table {
             case ValidationType.BOOLEAN:
                 return ValidateBoolean(data);
         }
-    }
-    private checkSchema(data: string[]) {
-        data.forEach(this.checkColumnName.bind(this));
-    }
-    private checkColumnName(name:string){
-        if (!this.columnNames.includes(name)) throw new QueryError(`Column '${name}' does not exist in table ${this.name}. This is case-sensitive. Valid columns are: ${this.columnNames.join(', ')}`)
     }
     get filePath() {
         return this.filepath;
@@ -194,76 +180,79 @@ export class Table {
         fs.writeFileSync(this.filepath, JSON.stringify(parsed, null, 2));
         return highestID + 1;
     }
-    async findOne(query: FetchQuery):Promise<RDBRecord> {
-        return await this.find(query)[0];
+    async findOne(query: Query):Promise<RDBRecord> {
+        const tempQuery = new Query(this);
+        tempQuery.query = query.query;
+        tempQuery.limit(1);
+        return await tempQuery.find()[0];
     }
-    async delete(query: FetchQuery): Promise<boolean> {
-        return false;
+    /**
+     * Deletes records from the table
+     * @param query the query to find which records to delete
+     * @returns a function that will revert the changes when called
+     */
+    async delete(query: Query) {
+        const records = await this.find(query);
+        records.forEach((record)=>{
+            record.remove();
+        });
+        return ()=>{
+            records.forEach((record)=>{
+                this.insert(record.toJSON());
+            });
+        };
     }
-    drop(): void {
-        // delete the file
-        throw new Error("Drop Table method not implemented.");
+    /**
+     * Drops the table and deletes the file
+     */
+    drop() {
+        this.dropped = true
+        fs.unlinkSync(this.filepath);
     }
-    private runSubscriptions() {
-        this.subscriptions.forEach(subscription => {
-            const newData = this.filter(subscription.query);
-            if(JSON.stringify(newData) !== JSON.stringify(subscription.current)){
+    async subscribe(query: Query) {
+        if(query.type != 'fetch') throw new QueryError("Only Fetch Queries can be subscribed")
+        
+        this.subscriptions.push({ current: query.find(), query });
+        
+        if(this.subscriptions.length == 1){
+            // start watching the file
+            fs.watchFile(this.filepath,{interval: 1000}, () => {
+                this.subscriptions.forEach((query)=>{
+                    run.bind(this)(query)
+                });
+            });
+        }
+        function run(query:{current: RDBRecord[], query: Query}){
+            const newData = query.query.find();
+            if(JSON.stringify(newData) !== JSON.stringify(query.current)){
                 const newIDs = newData.map((i=>i.id))
-                const oldIDs = subscription.current.map((i=>i.id))
-                const addedFn = (item)=>!oldIDs.includes(item.id)
-                const removedFn = (item)=>!newIDs.includes(item.id)
-                const updatedFn = (item)=>{
+                const oldIDs = query.current.map((i=>i.id))
+                const addedFn = (item:RDBRecord)=>{
+                    return !oldIDs.includes(item.id)
+                }
+                const removedFn = (item:RDBRecord)=>{
+                    return !newIDs.includes(item.id)
+                }
+                const updatedFn = (item:RDBRecord)=>{
                     if( oldIDs.includes(item.id) && newIDs.includes(item.id)){
-                        if(JSON.stringify(subscription.current.find(i=>i.id === item.id)) !== JSON.stringify(newData.find(i=>i.id === item.id))){
+                        if(JSON.stringify(query.current.find(i=>i.id == item.id)) !== JSON.stringify(newData.find(i=>i.id == item.id))){
                             return true
                         }
                     }
                     return false
                 }
-                subscription.fn( {
-                    added: newData.filter(addedFn),
-                    removed: subscription.current.filter(removedFn),
-                    updated: newData.filter(updatedFn)
-                });
-                subscription.current = newData;
-            }
-        });
-    }
-    async subscribe(query: QueryObject|FetchQuery ,fn: (updates: SubscriptionParams) => void) {
-        if(!this.subscriptions.size){
-            // start watching the file
-            fs.watchFile(this.filepath,{interval: 1000}, (curr, prev) => {
-                this.runSubscriptions();
-            });
-        }
-        // get the data
-        let data:RDBRecord[] = []; 
-        if(query instanceof FetchQuery){
-            this.checkSchema(query.affectingColumns());
-            const filteringFunctions = query.filteringFunctions();
-            if(filteringFunctions.length === 0) throw new QueryError("No filtering functions found")
-            if( 'and' in query.query ){
-                data = this.data.filter(item => {
-                    return filteringFunctions.every(fn => fn(item))
-                });
-            } else if ( 'or' in query.query ){
-                data = this.data.filter(item => {
-                    return filteringFunctions.some(fn => fn(item))
-                });
-            } else {
-                data = this.data.filter(item => {
-                    return filteringFunctions[0](item)
-                });
-            }
-            // await fn(data, {added: data, removed: [], updated: []})
-            this.subscriptions.add({query, fn, current: data});
-        } else {
-            debugger
-        }
-        return {
-            records: data,
-            unsubscribe: ()=>{
-                this.subscriptions.delete({query, fn, current: data});
+                const whatHasBeenRemoved = query.current.filter(removedFn)
+                const whatHasBeenAdded = newData.filter(addedFn)
+                whatHasBeenAdded.forEach((item)=>{
+                    query.query.emit('added', item, newData)
+                })
+                whatHasBeenRemoved.forEach((item)=>{
+                    query.query.emit('removed', item, newData)
+                })
+                newData.filter(updatedFn).forEach((item)=>{
+                    query.query.emit('updated', item, newData)
+                })
+                query.current = newData;
             }
         }
     }
@@ -277,99 +266,31 @@ export class RDatabase {
         if(options.directory){
             this.directory = options.directory;
             // get all files in directory
-            const files = fs.readdirSync(options.directory);
+            const files:string[] = fs.readdirSync(options.directory);
             // check if the name matches pattern /*_table.json/
             const TableFiles = files.filter((file)=>file.match(/.*_table.json/));
             console.log(TableFiles.length, "tables found in "+options.directory);
-            if(TableFiles.length === 0) throw new DatabaseError("No tables found in "+options.directory);
-            const schemas = files.filter((file)=>{
-                return file.match(/.*_table.json/)
-            }).map((file)=>{
-                // const usersSchema = new Schema("users", [
-                //     {
-                //         name: "id",
-                //         type: "string",
-                //         unique: true,
-                //         required: true,
-                //     },
-                //     {
-                //         name: "name",
-                //         type: "string",
-                //         required: true,
-                //     },
-                //     {
-                //         name: "email",
-                //         type: "string",
-                //         format: "email",
-                //         required: true,
-                //     },
-                //     {
-                //         name: "age",
-                //         type: "number",
-                //         required: true,
-                //     },
-                //     {
-                //         name: "isAdmin",
-                //         type: "boolean",
-                //         required: true,
-                //     },
-                //     {
-                //         name: "password",
-                //         type: "string",
-                //         required: true,
-                //     },
-                //     {
-                //         name: "createdAt",
-                //         type: "string",
-                //         format: "date",
-                //         required: true,
-                //     },
-                //     {
-                //         name: "updatedAt",
-                //         type: "string",
-                //         format: "date",
-                //         required: true,
-                //     }
-                // ])
-                // const schemaData = JSON.parse(fs.readFileSync(path.resolve(__dirname, file), "utf-8"));
-                // const schema = new Schema(schemaData.schema.name, [
-                //     {
-                //         name: "id",
-                //         type: "string",
-                //         unique: true,
-                //         required: true,
-                //     },
-                //     {
-                //         name: "title",
-                //         type: "string",
-                //         required: true,
-                //     },
-                //     {
-                //         name: "body",
-                //         type: "string",
-                //         required: true,
-                //     },
-                //     {
-                //         name: "createdAt",
-                //         type: "string",
-                //         format: "date",
-                //         required: true,
-                //     },
-                //     {
-                //         name: "updatedAt",
-                //         type: "string",
-                //         format: "date",
-                //         required: true,
-                //     }
-                // ]);
-                // // schema.schema.name = file.replace('_table.json', '');
-                // const filepath = path.resolve(__dirname, file);
-                // this.tables.set(schema.name ,new Table(schema, filepath));
-                // return this.tables.get(schema.name);
-            })
+            if(TableFiles.length == 0) {
+                console.warn("No tables found in "+options.directory);
+            } else {
+                const schemas = files.filter((file)=>{
+                    return file.match(/.*_table.json/)
+                }).map((file)=>{
+                    const filepath = path.resolve(options.directory, file);
+                    const data = JSON.parse(fs.readFileSync(filepath, "utf-8"));
+                    const schema = data.schema;
+                    return [schema,filepath];
+                });
+                schemas.forEach((data)=>{
+                    this.tables.set(data[0].name ,new Table(data[0], data[1] ));
+                });
+                console.log(schemas.length, "schemas found in "+options.directory)
+            }
         } else if (options.schemas) {
-        this.directory = path.resolve(__dirname, "./");
+            this.directory = path.resolve(__dirname, "./");
             this.tables = this.create(options.schemas);
+        } else{
+            throw new Error("No schemas or directory provided")
         }
     }
     create(schemas:TableSchema[]):Map<string, Table> {

@@ -1,11 +1,11 @@
-import { Column, SubscriptionParams, Table } from "./Db";
+import { Column, InsertData, SubscriptionParams, Table } from "./Db";
 import { QueryError } from "./Errors";
 import { Operators, Query } from "./Query";
 import * as crypto from 'crypto';
 import fs from "fs";
 
 export class RDBRecord extends Map<string, any> {
-    constructor(data: object, private table: Table) {
+    constructor(data: InsertData, private table: Table) {
         super();
         Object.keys(data).forEach((item) => {
             this.set(item, data[item]);
@@ -50,6 +50,7 @@ export class RDBRecord extends Map<string, any> {
     // I would like to add a way to set the value of a column and then have it automatically save to the database but I'm not sure how to do that because the set method is already taken
     update(column: string, value: any, autosave: boolean = true){
         const col = this.table.columns.find((col) => col.name == column);
+        if(!col) throw new QueryError(`Column '${column}' does not exist in table '${this.table.name}'`);
         if(this.table.validate(value, col)){
             super.set(column, value);
             if( autosave ) this.save();

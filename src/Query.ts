@@ -118,10 +118,10 @@ export class Query extends EventEmitter {
         let satisfiesAnd = true;
         let satisfiesOr = true;
         if('and' in ruleset){
-            satisfiesAnd = ruleset.and.every((rule) => this.satisfiesRule(item, rule));
+            satisfiesAnd = (ruleset.and ?? []).every((rule) => this.satisfiesRule(item, rule));
         }
         if('or' in ruleset){
-            satisfiesOr = ruleset.or.some((rule) => this.satisfiesRule(item, rule));
+            satisfiesOr = (ruleset.or ?? []).some((rule) => this.satisfiesRule(item, rule));
         }
         return satisfiesAnd && satisfiesOr;
     };

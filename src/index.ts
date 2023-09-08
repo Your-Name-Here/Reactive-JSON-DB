@@ -1,7 +1,8 @@
-import path, { dirname } from "path";
+import path from "path";
 import { RDatabase, TableSchema } from "./Db";
 import { Operators, Query } from "./Query";
 import { ValidationType } from "./Validations";
+import { RDBRecord } from "./Record";
 
 const userSchema: TableSchema = {
     name: "users",
@@ -31,12 +32,13 @@ const database = new RDatabase({
 });
 if(!database.tables.has('users')) {
     database.create([
-        commentsSchema
+        commentsSchema,
+        userSchema
     ]);
     console.log('Created Tables')
 }
-let unsubscribe;
 const users = database.tables.get('users');
+if(!users) throw new Error("Users table does not exist");
 const regularUsers = new Query(users);
 regularUsers.andWhere({
     column: "isAdmin",
@@ -57,11 +59,11 @@ console.log("Regular Users:", regUsers.map((user) => user.get('name')).join(", "
 adminsQuery.subscribe();
 adminsQuery.on('added', (user, resultset) => {
     console.log("+ Admin:", user.get('name'));
-    if(resultset.length) console.log("All Admins:", resultset.map((user) => user.get('name')).join(", "));
+    if(resultset.length) console.log("All Admins:", resultset.map((user:RDBRecord) => user.get('name')).join(", "));
 });
 adminsQuery.on('removed', (user, resultset) => {
     console.log("- Admin:", user.get('name'));
-    if(resultset.length) console.log("All Admins:", resultset.map((user) => user.get('name')).join(", "));
+    if(resultset.length) console.log("All Admins:", resultset.map((user:RDBRecord) => user.get('name')).join(", "));
 });
 adminsQuery.on('updated', (user, resultset) => {
     console.log("Updated Admin:", user.get('name'), "to age", user.get('age'));
@@ -69,13 +71,14 @@ adminsQuery.on('updated', (user, resultset) => {
 });
 regularUsers.on('added', (user, resultset) => {
     console.log("+ User:", user.get('name'));
-    if(resultset.length) console.log("All Users:", resultset.map((user) => user.get('name')).join(", "));
+    if(resultset.length) console.log("All Users:", resultset.map((user:RDBRecord) => user.get('name')).join(", "));
 });
 regularUsers.on('removed', (user, resultset) => {
     console.log("- User:", user.get('name'));
-    if(resultset.length) console.log("All Users:", resultset.map((user) => user.get('name')).join(", "));
+    if(resultset.length) console.log("All Users:", resultset.map((user:RDBRecord) => user.get('name')).join(", "));
 });
 const comments = database.tables.get('comments');
+if(!comments) throw new Error("Comments table does not exist");
 const addQuery = new Query(comments);
 const commentsQuery = new Query(comments);
 commentsQuery.subscribe();
@@ -94,6 +97,6 @@ addQuery.insert({
 })
 try {
     // addQuery.execute();
-} catch (error) {
-    console.log(error.message);
+} catch (error:any) {
+    console.log(error?.message||error);
 }

@@ -76,7 +76,7 @@ export class Table {
             const column = this.schema.columns.filter(c=>c.name == columnName)[0];
             if(!this.columnNames.includes(columnName)) throw new Error(`Error inserting into table ${this.name}: Column '${columnName}' does not exist in table ${this.name}. This is case-sensitive. Valid columns are: ${this.columnNames.join(', ')}`)
                 if(column?.unique){
-                    const found = this.data.find((item)=>item[columnName] == data[columnName]);
+                    const found = this.data.find((item)=>item.get(columnName) == data[columnName]);
                     if(found) throw new QueryError(`Error inserting into table ${this.name}: Column '${columnName}' is unique but a record with this value already exists`)
                 }
 
@@ -103,7 +103,7 @@ export class Table {
      * @param query 
      * @returns {number} - the number of rows affected
      */
-    private async remove(query: RDBRecord): Promise<number> {
+    async remove(query: RDBRecord): Promise<number> {
         if(this.dropped) throw new QueryError(`Table '${this.name}' no longer exists`)
         this._mutex.lock();
         this.data.splice(this.data.findIndex((item)=>item.id == query.id), 1);
@@ -156,12 +156,6 @@ export class Table {
             case ValidationType.BOOLEAN:
                 return ValidateBoolean(data);
         }
-    }
-    private checkSchema(data: string[]) {
-        data.forEach(this.checkColumnName.bind(this));
-    }
-    private checkColumnName(name:string){
-        if (!this.columnNames.includes(name)) throw new QueryError(`Column '${name}' does not exist in table ${this.name}. This is case-sensitive. Valid columns are: ${this.columnNames.join(', ')}`)
     }
     get filePath() {
         return this.filepath;
@@ -222,7 +216,7 @@ export class Table {
         
         if(this.subscriptions.length == 1){
             // start watching the file
-            fs.watchFile(this.filepath,{interval: 1000}, (curr, prev) => {
+            fs.watchFile(this.filepath,{interval: 1000}, () => {
                 this.subscriptions.forEach((query)=>{
                     run.bind(this)(query)
                 });
@@ -233,14 +227,13 @@ export class Table {
             if(JSON.stringify(newData) !== JSON.stringify(query.current)){
                 const newIDs = newData.map((i=>i.id))
                 const oldIDs = query.current.map((i=>i.id))
-                const whatHasBeenAdded = newData.filter((item)=>!oldIDs.includes(item.id))
-                const addedFn = (item)=>{
+                const addedFn = (item:RDBRecord)=>{
                     return !oldIDs.includes(item.id)
                 }
-                const removedFn = (item)=>{
+                const removedFn = (item:RDBRecord)=>{
                     return !newIDs.includes(item.id)
                 }
-                const updatedFn = (item)=>{
+                const updatedFn = (item:RDBRecord)=>{
                     if( oldIDs.includes(item.id) && newIDs.includes(item.id)){
                         if(JSON.stringify(query.current.find(i=>i.id == item.id)) !== JSON.stringify(newData.find(i=>i.id == item.id))){
                             return true
@@ -249,6 +242,7 @@ export class Table {
                     return false
                 }
                 const whatHasBeenRemoved = query.current.filter(removedFn)
+                const whatHasBeenAdded = newData.filter(addedFn)
                 whatHasBeenAdded.forEach((item)=>{
                     query.query.emit('added', item, newData)
                 })
@@ -272,7 +266,7 @@ export class RDatabase {
         if(options.directory){
             this.directory = options.directory;
             // get all files in directory
-            const files = fs.readdirSync(options.directory);
+            const files:string[] = fs.readdirSync(options.directory);
             // check if the name matches pattern /*_table.json/
             const TableFiles = files.filter((file)=>file.match(/.*_table.json/));
             console.log(TableFiles.length, "tables found in "+options.directory);

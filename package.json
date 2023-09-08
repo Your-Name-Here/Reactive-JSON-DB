@@ -1,27 +1,44 @@
 {
   "name": "reactivedb",
-  "version": "0.1.0",
-  "description": "",
+  "version": "0.1.1",
+  "description": "A reactive JSON database for Node.js",
   "main": "index.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1",
+    "test": "mocha --require ts-node/register src/tests/**/*.ts",
     "build": "tsc",
     "start": "tsc && node dist/index.js",
     "watch": "nodemon dist/index.js"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Your-Name-Here/Reactive-JSON-DB/"
   },
   "nodemonConfig": {
     "ignore": [
       "/*.json"
     ]
   },
-  "keywords": [],
-  "author": "",
+  "keywords": [
+    "database",
+    "json",
+    "reactive",
+    "typescript",
+    "javascript",
+    "nodejs",
+    "DB",
+    "JSON-DB",
+    "Reactive-DB",
+    "Reactive-JSON-DB"
+  ],
+  "author": "Your-Name-Here",
   "license": "MIT",
   "devDependencies": {
+    "@types/chai": "^4.3.6",
     "@types/mocha": "^10.0.1",
     "@types/node": "^20.5.6",
     "chai": "^4.3.8",
     "mocha": "^10.2.0",
+    "ts-node": "^10.9.1",
     "typescript": "^5.1.6"
   }
 }

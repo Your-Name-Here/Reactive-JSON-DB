@@ -1,5 +1,6 @@
+import path, { dirname } from "path";
 import { RDatabase, TableSchema } from "./Db";
-import { FetchQuery, Operators, Query } from "./Query";
+import { Operators, Query } from "./Query";
 import { ValidationType } from "./Validations";
 
 const userSchema: TableSchema = {
@@ -15,91 +16,84 @@ const userSchema: TableSchema = {
         { name: 'updatedAt', type: ValidationType.DATE },
     ]
 }
-const database = new RDatabase({
-    // directory: "./dist/",
-    schemas: [
-        userSchema
+const commentsSchema: TableSchema = {
+    name: "comments",
+    columns: [
+        { name: 'id', type: ValidationType.NUMBER, unique: true, autoIncrement: true },
+        { name: 'userId', type: ValidationType.NUMBER, required: true },
+        { name: 'content', type: ValidationType.STRING, required: true },
+        { name: 'createdAt', type: ValidationType.DATE },
+        { name: 'updatedAt', type: ValidationType.DATE },
     ]
+}
+const database = new RDatabase({
+    directory: path.resolve( __dirname ,'..', "dist"),
 });
+if(!database.tables.has('users')) {
+    database.create([
+        commentsSchema
+    ]);
+    console.log('Created Tables')
+}
 let unsubscribe;
-// const db = database.create([
-//     userSchema,
-//     postsSchema
-// ]);
-// console.log("Finding the Admins...");
-// const query = new FetchQuery({
-//     value: 'gmail.com',
-//     op: Operators.IN,
-//     column: "email",
-// });
 const users = database.tables.get('users');
-// const oldPeople = new Query(users)
-// .where({
-//     column: "age",
-//     op: Operators.GT,
-//     value: 30,
-// })
-// .orderBy("age", "ASC")
-// .subscribe((updates) => {
-//     updates.added.forEach((user) => {
-//         console.log(`New User: ${user.get('name')}`);
-//     });
-//     updates.removed.forEach((user) => {
-//         console.log(`User Removed: ${user.get('name')}`);
-//     });
-//     updates.updated.forEach((user) => {
-//         console.log(`Update to User: ${user.get('name')}`);
-//     });
-// });
-const regularUsers = new Query(users)
-.where({
+const regularUsers = new Query(users);
+regularUsers.andWhere({
     column: "isAdmin",
     op: Operators.EQ,
     value: false,
 });
-regularUsers.subscribe((updates) => {
-    // const _users = regularUsers.find();
-    // updates.added.forEach((user) => {
-    //     console.log(`New User: ${user.get('name')}`);
-    // });
-    // updates.removed.forEach((user) => {
-    //     console.log(`User Removed: ${user.get('name')}`);
-    // });
-    // updates.updated.forEach((user) => {
-    //     console.log(`Update to User: ${user.get('name')}`);
-    // });
-    // console.log("Regular Users:", _users.map((user) => user.get('name')).join(", "));
-});
 const adminsQuery = new Query(users)
-.where({
+.andWhere({
     column: "isAdmin",
     op: Operators.EQ,
     value: true,
 });
 const admins = adminsQuery.find();
 const regUsers = regularUsers.find();
+regularUsers.subscribe();
 console.log("Admins:", admins.map((user) => user.get('name')).join(", "));
 console.log("Regular Users:", regUsers.map((user) => user.get('name')).join(", "));
-adminsQuery.subscribe(updates=>{
-    const _admins = adminsQuery.find();
-    if(updates.added.length > 0) {
-        // console.log("New Admins Added");
-        console.log(updates.added.length, "New admins:", updates.added.map((user) => user.get('name')).join(", "));
-    }
-    else if(updates.removed.length > 0) {
-        // console.log("Admins Removed");
-        console.log(updates.removed.length, "Admins removed", updates.removed.map((user) => user.get('name')).join(", "));
-    }
-    else if(updates.updated.length > 0) {
-        // console.log("Admins Updated");
-        console.log(updates.updated.length, "Admins Updated", updates.updated.map((user) => user.get('name')).join(", "));
-    }
-    const _users = regularUsers.find();
-    console.clear();
-    console.log('Admins');
-    _admins.forEach((user) => {
-        console.log('    -',user.get('name'));
-        // console.log("Admins:", _admins.map((user) => user.get('name')+' ('+user.get('email')+')').join(", "));
-    });
-    console.log("Regular Users:", _users.map((user) => user.get('name')).join(", "));
+adminsQuery.subscribe();
+adminsQuery.on('added', (user, resultset) => {
+    console.log("+ Admin:", user.get('name'));
+    if(resultset.length) console.log("All Admins:", resultset.map((user) => user.get('name')).join(", "));
+});
+adminsQuery.on('removed', (user, resultset) => {
+    console.log("- Admin:", user.get('name'));
+    if(resultset.length) console.log("All Admins:", resultset.map((user) => user.get('name')).join(", "));
+});
+adminsQuery.on('updated', (user, resultset) => {
+    console.log("Updated Admin:", user.get('name'), "to age", user.get('age'));
+    // if(resultset.length) console.log("All Admins:", resultset.map((user) => user.get('name')).join(", "));
+});
+regularUsers.on('added', (user, resultset) => {
+    console.log("+ User:", user.get('name'));
+    if(resultset.length) console.log("All Users:", resultset.map((user) => user.get('name')).join(", "));
+});
+regularUsers.on('removed', (user, resultset) => {
+    console.log("- User:", user.get('name'));
+    if(resultset.length) console.log("All Users:", resultset.map((user) => user.get('name')).join(", "));
+});
+const comments = database.tables.get('comments');
+const addQuery = new Query(comments);
+const commentsQuery = new Query(comments);
+commentsQuery.subscribe();
+commentsQuery.on('added', (comment, resultset) => {
+    const userQuery = new Query(users);
+    const user = userQuery.where({
+        column: "id",
+        op: Operators.EQ,
+        value: comment.get('userId'),
+    }).find();
+    if(user.length) console.log("+ Comment:", comment.get('content'), "by", user[0].get('name'));
+});
+addQuery.insert({
+    userId: 4,
+    content: "no, just you!",
 })
+try {
+    // addQuery.execute();
+} catch (error) {
+    console.log(error.message);
+}

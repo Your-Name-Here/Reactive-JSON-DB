@@ -49,10 +49,10 @@ export class Table {
         this.name = schema.name;
         if(!fs.existsSync(this.filepath)) {
             // @ts-ignore
-            console.log(`Creating table ${this.name} with columns: ${schema.columns.map(c=>c.name).join(', ')}`)
             fs.writeFileSync(this.filepath, JSON.stringify({
                 schema: schema,
                 autoIncrement: 0,
+                lastInsertID: 0,
                 data: []
             }, null, 2));
         } else {
@@ -65,7 +65,8 @@ export class Table {
         await this._mutex.lock();
         // validate data against schema
         const columns = Object.keys(data);
-        data.id = await this.getInsertID() + 1;
+        const lastInsertID = await this.getInsertID();
+        data.id = lastInsertID + 1;
         data.createdAt = new Date().toISOString();
         data.updatedAt = new Date().toISOString();
         const requiredColumns = this.schema.columns.filter( c=>c.required);
@@ -269,7 +270,6 @@ export class RDatabase {
             const files:string[] = fs.readdirSync(options.directory);
             // check if the name matches pattern /*_table.json/
             const TableFiles = files.filter((file)=>file.match(/.*_table.json/));
-            console.log(TableFiles.length, "tables found in "+options.directory);
             if(TableFiles.length == 0) {
                 console.warn("No tables found in "+options.directory);
             } else {
@@ -284,7 +284,6 @@ export class RDatabase {
                 schemas.forEach((data)=>{
                     this.tables.set(data[0].name ,new Table(data[0], data[1] ));
                 });
-                console.log(schemas.length, "schemas found in "+options.directory)
             }
         } else if (options.schemas) {
             this.directory = path.resolve(__dirname, "./");
@@ -297,8 +296,13 @@ export class RDatabase {
         const ret = new Map();
         schemas.forEach(schema => {
             const table = new Table( schema, path.resolve(this.directory,`${schema.name}_table.json`));
+            this.tables.set(schema.name, table);
             ret.set(schema.name, table);
         });
         return ret;
     }
+    drop(table: string) {
+        this.tables.get(table)?.drop();
+        this.tables.delete(table);
+    }   
 }

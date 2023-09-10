@@ -1,6 +1,6 @@
 import { QueryError } from "./Errors";
 import { RDBRecord } from "./Record";
-import { SubscriptionParams, Table, TableSchema } from "./Db";
+import { Table } from "./Db";
 import EventEmitter from "events";
 
 export enum Operators {
@@ -135,6 +135,10 @@ export class Query extends EventEmitter {
         if(this.type == 'update') {
             throw new QueryError("Update Not Implemented");
         }
+        if(this.type == 'delete') {
+            throw new QueryError("Delete Not Implemented");
+        }
+        return [];
     }
 }
 export type InsertQuery = Record<string, any>

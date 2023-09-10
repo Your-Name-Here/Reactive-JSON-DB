@@ -1,4 +1,4 @@
-import { Column, InsertData, SubscriptionParams, Table } from "./Db";
+import { InsertData, SubscriptionParams, Table } from "./Db";
 import { QueryError } from "./Errors";
 import { Operators, Query } from "./Query";
 import * as crypto from 'crypto';

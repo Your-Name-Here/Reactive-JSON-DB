@@ -9,8 +9,6 @@
     "outDir": "./dist/",
     "removeComments": true,
     "sourceRoot": "../src/",
-    "declarationDir": "./dist/types/",
-    
     "esModuleInterop": true,
     "forceConsistentCasingInFileNames": true,
 
@@ -21,5 +19,6 @@
     "noUnusedLocals": true,
     "noImplicitReturns": true,
     "skipLibCheck": true
-  }
+  },
+  "exclude": ["node_modules", "dist", "types"]
 }

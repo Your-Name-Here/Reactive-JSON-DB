@@ -2,11 +2,12 @@
   "name": "reactivedb",
   "version": "0.1.1",
   "description": "A reactive JSON database for Node.js",
-  "main": "index.js",
+  "main": "dist/index.js",
   "scripts": {
     "test": "mocha --require ts-node/register src/tests/**/*.ts",
-    "build": "tsc",
-    "start": "tsc && node dist/index.js",
+    "clean": "rimraf dist types",
+    "build": "npm run clean && tsc",
+    "start": "npm run build && node dist/index.js",
     "watch": "nodemon dist/index.js"
   },
   "repository": {
@@ -35,7 +36,7 @@
   "devDependencies": {
     "@types/chai": "^4.3.6",
     "@types/mocha": "^10.0.1",
-    "@types/node": "^20.5.6",
+    "@types/node": "^20.6.0",
     "chai": "^4.3.8",
     "mocha": "^10.2.0",
     "ts-node": "^10.9.1",

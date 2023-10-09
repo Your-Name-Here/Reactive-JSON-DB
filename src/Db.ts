@@ -23,6 +23,7 @@ export type Column = {
     name: string,
     autoIncrement?: boolean,
     type: ValidationType,
+    enum?: Array<string|number|boolean>,
     default?: any
     required?: boolean
     format?: string
@@ -76,13 +77,7 @@ export class Table {
         for(const columnName of this.schema.columns.map((item)=>item.name)){
             const column = this.schema.columns.filter(c=>c.name == columnName)[0];
             if(!this.columnNames.includes(columnName)) throw new Error(`Error inserting into table ${this.name}: Column '${columnName}' does not exist in table ${this.name}. This is case-sensitive. Valid columns are: ${this.columnNames.join(', ')}`)
-                if(column?.unique){
-                    const found = this.data.find((item)=>item.get(columnName) == data[columnName]);
-                    if(found) throw new QueryError(`Error inserting into table ${this.name}: Column '${columnName}' is unique but a record with this value already exists`)
-                }
-
             if(!this.validate(data[columnName], column)) throw new QueryError(`Error inserting into table ${this.name}: Column '${columnName}' failed validation`)
-
             if(column.unique){
                 const found = this.data.find((item)=>{
                     return item.get(columnName) == data[columnName]
@@ -141,6 +136,9 @@ export class Table {
         });
     }
     validate(data: any, against: Column) {
+        if(against?.enum) {
+            if(!against.enum.includes(data)) return false;
+        }
         switch (against.type) {
             case ValidationType.EMAIL:
                 return ValidateEmail(data);

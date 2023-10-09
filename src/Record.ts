@@ -51,6 +51,7 @@ export class RDBRecord extends Map<string, any> {
     update(column: string, value: any, autosave: boolean = true){
         const col = this.table.columns.find((col) => col.name == column);
         if(!col) throw new QueryError(`Column '${column}' does not exist in table '${this.table.name}'`);
+        // if(col.unique && await this.table.find((item) => item.get(column) == value)) throw new QueryError(`Value '${value}' is not unique for column '${column}'`
         if(this.table.validate(value, col)){
             super.set(column, value);
             if( autosave ) this.save();

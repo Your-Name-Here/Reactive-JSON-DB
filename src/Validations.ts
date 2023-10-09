@@ -6,7 +6,6 @@ export enum ValidationType {
     STRING,
     NUMBER,
     BOOLEAN,
-
 }
 export function ValidateEmail(email:string){
     var re = RegExp(/^[a-zA-Z0-9._-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,4}$/);

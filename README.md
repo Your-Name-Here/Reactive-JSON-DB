@@ -90,13 +90,20 @@ const elders = oldPeople.find()
 ### Subscribing
 You can subscribe to a query that is of type 'fetch' only. From our example above;
 
- Updates contains ``added``, ``removed`` and ``updated`` that are arrays of ``RDBRecord``
 ```javascript
-oldPeople.subscribe( updates =>{
-  if ( updates.added.length ) {
-    updates.added.forEach(user => { console.log( user.get('name') ) } );
-	} );
-} )
+oldPeople.subscribe( )
+```
+```javascript
+  oldPeople.on('added', (item: RDBRecord, recordSet: RDBRecord[])=>{
+    // item is the newly added record, and recordSet is the result of the query after the insertion. 
+  })
+  oldPeople.on('updated', (item: RDBRecord, recordSet: RDBRecord[])=>{
+    // item is the updated record, and recordSet is the result of the query after the update. 
+  })
+  oldPeople.on('removed', (item: RDBRecord, recordSet: RDBRecord[])=>{
+    // item is the removed record, and recordSet is the result of the query after the removal. 
+  })
+
 ```
 Each updates.added, removed, or updates 
 ### Update

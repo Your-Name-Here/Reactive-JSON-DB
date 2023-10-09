@@ -257,6 +257,10 @@ export class Table {
     }
 }
 export class RDatabase {
+    /**
+     * A mutex to prevent multiple threads from accessing the database at the same time
+     * This should not be accessed directly
+     */
     mutex: Mutex = new Mutex();
     directory: string;
     tables: Map<string, Table> = new Map();
@@ -290,6 +294,9 @@ export class RDatabase {
             throw new Error("No schemas or directory provided")
         }
     }
+    /**
+     * Creates a table
+     */
     create(schemas:TableSchema[]):Map<string, Table> {
         const ret = new Map();
         schemas.forEach(schema => {
@@ -299,6 +306,9 @@ export class RDatabase {
         });
         return ret;
     }
+    /**
+     * Drops a table (delete table file)
+     */
     drop(table: string) {
         this.tables.get(table)?.drop();
         this.tables.delete(table);

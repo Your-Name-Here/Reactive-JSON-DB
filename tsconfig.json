@@ -7,7 +7,7 @@
     "declaration": true,
     "inlineSourceMap": true,
     "outDir": "./dist/",
-    "removeComments": true,
+    // "removeComments": true,
     "sourceRoot": "../src/",
     "esModuleInterop": true,
     "forceConsistentCasingInFileNames": true,

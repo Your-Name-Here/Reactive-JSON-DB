@@ -61,12 +61,13 @@ export class Table {
         }
         this.columns = schema.columns;
     }
-    async insert(data:InsertData) {
+    async insert(data:InsertData|RDBRecord) {
         if(this.dropped) throw new QueryError(`Table '${this.name}' no longer exists`)
         await this._mutex.lock();
         // validate data against schema
         const columns = Object.keys(data);
         const lastInsertID = await this.getInsertID();
+        if(data instanceof RDBRecord) data = data.toJSON();
         data.id = lastInsertID + 1;
         data.createdAt = new Date().toISOString();
         data.updatedAt = new Date().toISOString();
@@ -80,6 +81,7 @@ export class Table {
             if(!this.validate(data[columnName], column)) throw new QueryError(`Error inserting into table ${this.name}: Column '${columnName}' failed validation`)
             if(column.unique){
                 const found = this.data.find((item)=>{
+                    // @ts-ignore
                     return item.get(columnName) == data[columnName]
                 });
                 if(found) throw new Error(`Error inserting into table ${this.name}: Column '${columnName}' is unique but a record with this '${columnName}: ${data[columnName]}' already exists: ${found.get('id')}`)

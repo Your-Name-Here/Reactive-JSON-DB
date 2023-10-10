@@ -146,4 +146,3 @@ record.subscribe(changes => {
   - Automated testing
   - Automated publishing to NPM
   - Automated Typescript Transpilation
-

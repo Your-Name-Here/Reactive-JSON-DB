@@ -1,3 +1,4 @@
+import EventEmitter from "events";
 import { InsertData, SubscriptionParams, Table } from "./Db";
 import { QueryError } from "./Errors";
 import { Operators, Query } from "./Query";
@@ -5,20 +6,49 @@ import * as crypto from 'crypto';
 import fs from "fs";
 
 export class RDBRecord extends Map<string, any> {
+    events: EventEmitter;
+    on: (eventName: string | symbol, listener: (...args: any[]) => void) => EventEmitter;
+    off: (eventName: string | symbol, listener: (...args: any[]) => void) => EventEmitter;
+    once: (eventName: string | symbol, listener: (...args: any[]) => void) => EventEmitter;
     constructor(data: InsertData, private table: Table) {
         super();
         Object.keys(data).forEach((item) => {
             this.set(item, data[item]);
         });
+        this.events = new EventEmitter();
+        this.set('createdAt', Date.now().toString());
+        this.set('updatedAt', Date.now().toString());
+        this.save();
+        this.on = this.events.on;
+        this.off = this.events.off;
+        this.once = this.events.once;
     }
     get id() {
         return this.get('id');
     }
+    /**
+     * The date (timestamp) the record was last updated
+     */
+    get updatedAt() {
+        return this.get('updatedAt');
+    }
+    /**
+     * The date (timestamp) the record was created
+     */
+    get createdAt() {
+        return this.get('createdAt');
+    }
+    /**
+     * The sha256 hash of the record
+     */
     get hash(){
         const dataString = JSON.stringify(this.toJSON());
         const sha256Hash = crypto.createHash('sha256').update(dataString).digest('hex');
         return sha256Hash;
     }
+    /** 
+     * Saves the record to the database after updating the data
+     */
     save(){
         const file = fs.readFileSync(this.table.filePath, "utf-8");
         const parsed = JSON.parse(file);
@@ -29,6 +59,9 @@ export class RDBRecord extends Map<string, any> {
         fs.writeFileSync(this.table.filePath, JSON.stringify(parsed, null, 2));
         return true;
     }
+    /**
+     * Removes the record from the database
+     */
     async remove() {
         const file = fs.readFileSync(this.table.filePath, "utf-8");
         const parsed = JSON.parse(file);
@@ -37,6 +70,9 @@ export class RDBRecord extends Map<string, any> {
         fs.writeFileSync(this.table.filePath, JSON.stringify(parsed, null, 2));
         return true;
     }
+    /**
+     * Subscribes to updates to the record
+     */
     async subscribe(fn: (updates: SubscriptionParams) => void) {
         const query = new Query(this.table);
         query.andWhere({
@@ -45,9 +81,16 @@ export class RDBRecord extends Map<string, any> {
             value: this.id,
         });
         query.on('removed', fn);
-        return await this.table.subscribe(query);
+        query.on('updated', fn);
+        await this.table.subscribe(query);
+        return ()=>{
+            query.removeListener('removed', fn);
+            query.removeListener('updated', fn);
+        }
     }
-    // I would like to add a way to set the value of a column and then have it automatically save to the database but I'm not sure how to do that because the set method is already taken
+    /**
+     * Updates the record with the new data. Autosaves by default.
+     */
     update(column: string, value: any, autosave: boolean = true){
         const col = this.table.columns.find((col) => col.name == column);
         if(!col) throw new QueryError(`Column '${column}' does not exist in table '${this.table.name}'`);

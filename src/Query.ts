@@ -28,45 +28,86 @@ export class Query extends EventEmitter {
     private _limit: number|null = null;
     private sortingFn: (a: RDBRecord, b: RDBRecord) => number = (a, b) => 0;
     type: 'fetch'|'insert'|'update'|'delete' = 'fetch';
-    data: any;
+    data: RDBRecord[]=[];
 
     constructor(private table: Table) {
         super()
         this.table = table;
     }
+    /**
+     * Returns the results of the query as an array of RDBRecords
+     * 
+     * If no where clauses are added, returns all records in the table.
+     */
     public find(): RDBRecord[] {
+        if(this.query.and == undefined && this.query.or == undefined) return this.table.data.sort(this.sortingFn).slice(0, this._limit||undefined);
         const raw = this.table.data.filter((item) => this.satisfiesRuleset(item, this.query));
         if(this._limit) {
             return raw.sort(this.sortingFn).slice(0, this._limit);
         }
         return raw.sort(this.sortingFn);
     }
+    /**
+     * Adds a where clause to the query. Can be chained. eg. `query.where({ column: "id", op: Operators.EQ, value: 1 }).execute()`
+     * 
+     * This is an alias for `query.orWhere()` so you can actually call this several times on a query to add multiple "or where" clauses.
+     */
     where(rule:Rule) {
         this.orWhere(rule);
         return this;
     }
+    /**
+     * Adds an "and where" clause to the query. Can be chained. eg.
+     * 
+     * `query.andWhere({ column: "name", op: Operators.EQ, value: 'John' }).andWhere({ value: 'gmail.com', op: Operators.IN, column: 'email' }).execute()`
+     */
     public andWhere(rule: Rule){
         if(this.query.and == undefined) this.query.and = [rule];
         else this.query.and.push( rule );
         return this;
     }
+    /**
+     * Adds an "or where" clause to the query. Can be chained and called multiple times on the same query.
+     */
     public orWhere(rule: Rule){
         if(this.query.or == undefined) this.query.or = [rule];
         else this.query.or.push( rule );
         return this;
     }
+    /**
+     * Transforms into an `Update` query and sets data to be updated. Need to call execute() to run the query after adding where clauses.
+     * Can be chained. eg. `query.update([{ name: "John Doe" }]).where({ column: "id", op: Operators.EQ, value: 1 }).execute()`
+     */
     public set(columns: { name:string, value:any }[]) {
         this.type = 'update';
+        for(const record of this.data){
+            for(const column of columns){
+                record.set(column.name, column.value);
+            }
+        }
         return this;
     }
-    public insert(data: InsertQuery){
+    /**
+     * Transforms this query into an insert query. Need to call execute() to run the query after adding where clauses.
+     * Can be chained. eg. `query.insert({ name: "John Doe" }).execute()`
+     */
+    public insert(data: InsertQuery|RDBRecord){
         this.type = 'insert';
-        this.data = data;
+        if(data instanceof RDBRecord) this.data.push(data);
+        else data.push( new RDBRecord(data, this.table) );
         return this;
     }
+    /**
+     * Transforms this query into a delete query. Need to call execute() to run the query after adding where clauses.
+     * Can be chained. eg. `query.delete().where({ column: "id", op: Operators.EQ, value: 1 }).execute()`
+     */
     public delete() {
         this.type = 'delete';
+        return this;
     }
+    /**
+     * Limit the operation to a certain number of records.
+     */
     public limit(limit: number) {
         this._limit = limit;
         return this;
@@ -75,9 +116,9 @@ export class Query extends EventEmitter {
      * Subscribes to the query and returns an unsubscribe function
      * @param fn function to run when the data is changed
      * @returns promise - an unsubscribe function
+     * @todo implement unsubscribe
      */
     public async subscribe() {
-        // throw new QueryError("Not Implemented");
         if(this.type != 'fetch') throw new QueryError(`Only fetch queries can be subscribed to. This query type: '${ this.type }'.`);
         this.table.subscribe(this);
     }
@@ -125,6 +166,10 @@ export class Query extends EventEmitter {
         }
         return satisfiesAnd && satisfiesOr;
     };
+    /**
+     * Executes the query and returns the result.
+     * @todo implement update and delete queries
+     */
     public async execute(){
         // throw new QueryError("Not Implemented");
         if(this.type == 'fetch') return this.find();

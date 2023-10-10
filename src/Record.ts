@@ -16,9 +16,8 @@ export class RDBRecord extends Map<string, any> {
             this.set(item, data[item]);
         });
         this.events = new EventEmitter();
-        this.set('createdAt', Date.now().toString());
+        if(!this.has('createdAt')) this.set('createdAt', Date.now().toString());
         this.set('updatedAt', Date.now().toString());
-        this.save();
         this.on = this.events.on;
         this.off = this.events.off;
         this.once = this.events.once;

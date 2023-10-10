@@ -56,8 +56,6 @@ export class Table {
                 lastInsertID: 0,
                 data: []
             }, null, 2));
-        } else {
-            console.log(`Table '${this.name}' exists`)
         }
         this.columns = schema.columns;
     }
@@ -275,7 +273,7 @@ export class RDatabase {
             // check if the name matches pattern /*_table.json/
             const TableFiles = files.filter((file)=>file.match(/.*_table.json/));
             if(TableFiles.length == 0) {
-                console.warn("No tables found in "+options.directory);
+                throw new DatabaseError("No tables found in "+options.directory);
             } else {
                 const schemas = files.filter((file)=>{
                     return file.match(/.*_table.json/)

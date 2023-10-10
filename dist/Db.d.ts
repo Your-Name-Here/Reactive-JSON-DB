@@ -45,7 +45,7 @@ export declare class Table {
         query: Query;
     }[];
     constructor(schema: TableSchema, filepath: string);
-    insert(data: InsertData): Promise<RDBRecord>;
+    insert(data: InsertData | RDBRecord): Promise<RDBRecord>;
     /**
      * Removes a record from the table
      * @param query

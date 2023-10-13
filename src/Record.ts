@@ -45,14 +45,14 @@ export class RDBRecord extends Map<string, any> {
         const sha256Hash = crypto.createHash('sha256').update(dataString).digest('hex');
         return sha256Hash;
     }
-    /** 
+    /**
      * Saves the record to the database after updating the data
      */
     save(){
         const file = fs.readFileSync(this.table.filePath, "utf-8");
         const parsed = JSON.parse(file);
         const index = parsed.data.findIndex((item: any) => item.id === this.id);
-        if(JSON.stringify(this) == JSON.stringify(parsed.data[index])) return false;
+        if(JSON.stringify(this) === JSON.stringify(parsed.data[index])) return false;
         parsed.data[index] = this.toJSON();
         parsed.data[index].updatedAt = new Date().toISOString();
         fs.writeFileSync(this.table.filePath, JSON.stringify(parsed, null, 2));
@@ -91,9 +91,8 @@ export class RDBRecord extends Map<string, any> {
      * Updates the record with the new data. Autosaves by default.
      */
     update(column: string, value: any, autosave: boolean = true){
-        const col = this.table.columns.find((col) => col.name == column);
+        const col = this.table.columns.find((c) => c.name === column);
         if(!col) throw new QueryError(`Column '${column}' does not exist in table '${this.table.name}'`);
-        // if(col.unique && await this.table.find((item) => item.get(column) == value)) throw new QueryError(`Value '${value}' is not unique for column '${column}'`
         if(this.table.validate(value, col)){
             super.set(column, value);
             if( autosave ) this.save();

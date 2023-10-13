@@ -36,11 +36,11 @@ export class Query extends EventEmitter {
     }
     /**
      * Returns the results of the query as an array of RDBRecords
-     * 
+     *
      * If no where clauses are added, returns all records in the table.
      */
     public find(): RDBRecord[] {
-        if(this.query.and == undefined && this.query.or == undefined) return this.table.data.sort(this.sortingFn).slice(0, this._limit||undefined);
+        if(this.query.and == undefined && this.query.or === undefined) return this.table.data.sort(this.sortingFn).slice(0, this._limit||undefined);
         const raw = this.table.data.filter((item) => this.satisfiesRuleset(item, this.query));
         if(this._limit) {
             return raw.sort(this.sortingFn).slice(0, this._limit);
@@ -49,7 +49,7 @@ export class Query extends EventEmitter {
     }
     /**
      * Adds a where clause to the query. Can be chained. eg. `query.where({ column: "id", op: Operators.EQ, value: 1 }).execute()`
-     * 
+     *
      * This is an alias for `query.orWhere()` so you can actually call this several times on a query to add multiple "or where" clauses.
      */
     where(rule:Rule) {
@@ -58,7 +58,7 @@ export class Query extends EventEmitter {
     }
     /**
      * Adds an "and where" clause to the query. Can be chained. eg.
-     * 
+     *
      * `query.andWhere({ column: "name", op: Operators.EQ, value: 'John' }).andWhere({ value: 'gmail.com', op: Operators.IN, column: 'email' }).execute()`
      */
     public andWhere(rule: Rule){
@@ -94,7 +94,7 @@ export class Query extends EventEmitter {
     public insert(data: InsertQuery|RDBRecord){
         this.type = 'insert';
         if(data instanceof RDBRecord) this.data.push(data);
-        else data.push( new RDBRecord(data, this.table) );
+        else this.data.push( new RDBRecord(data, this.table) );
         return this;
     }
     /**
@@ -171,11 +171,16 @@ export class Query extends EventEmitter {
      * @todo implement update and delete queries
      */
     public async execute(){
-        // throw new QueryError("Not Implemented");
         if(this.type == 'fetch') return this.find();
         if(this.type == 'insert') {
-            if(this.data) return await this.table.insert(this.data);
-            else throw new QueryError("No data to insert");
+            const ret:RDBRecord[] = [];
+            if(this.data.length) {
+                for(const record of this.data){
+                    await this.table.insert(record)
+                    ret.push(record);
+                }
+                return ret;
+            } else throw new QueryError("No data to insert");
         }
         if(this.type == 'update') {
             throw new QueryError("Update Not Implemented");

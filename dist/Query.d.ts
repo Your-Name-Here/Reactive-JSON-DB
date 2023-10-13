@@ -91,7 +91,7 @@ export declare class Query extends EventEmitter {
      * Executes the query and returns the result.
      * @todo implement update and delete queries
      */
-    execute(): Promise<RDBRecord | RDBRecord[]>;
+    execute(): Promise<RDBRecord[]>;
 }
 export type InsertQuery = Record<string, any>;
 export {};

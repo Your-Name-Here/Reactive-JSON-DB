@@ -2,8 +2,16 @@ import { Mutex } from "./Utils";
 import { InsertQuery, Query } from "./Query";
 import { DatabaseError, QueryError } from "./Errors";
 import { RDBRecord } from "./Record";
-import { ValidateArrayLength, ValidateBoolean, ValidateEmail, ValidateISODate, ValidateNumeric, ValidateString, ValidateURL, ValidationType } from "./Validations";
-const fs = require("fs");
+import {
+    ValidateArrayLength,
+    ValidateBoolean,
+    ValidateEmail,
+    ValidateISODate,
+    ValidateNumeric,
+    ValidateString,
+    ValidateURL,
+    ValidationType } from "./Validations";
+import { existsSync, writeFileSync, readFileSync, unlinkSync, watchFile, readdirSync, mkdirSync } from "fs";
 const path = require("path");
 
 export type SubscriptionParams = {
@@ -17,13 +25,13 @@ export type TableSchema = {
 }
 type DatabaseOptions = {
     schemas?: TableSchema[],
-    directory?: string
+    directory: string
 }
 export type Column = {
     name: string,
     autoIncrement?: boolean,
     type: ValidationType,
-    enum?: Array<string|number|boolean>,
+    enum?: (string|number|boolean)[],
     default?: any
     required?: boolean
     format?: string
@@ -48,10 +56,10 @@ export class Table {
     constructor(private readonly schema: TableSchema, private filepath: string) {
         if(!('columns' in schema)) throw new DatabaseError(`Schema does not have columns defined.`)
         this.name = schema.name;
-        if(!fs.existsSync(this.filepath)) {
+        if(!existsSync(this.filepath)) {
             // @ts-ignore
-            fs.writeFileSync(this.filepath, JSON.stringify({
-                schema: schema,
+            writeFileSync(this.filepath, JSON.stringify({
+                schema,
                 autoIncrement: 0,
                 lastInsertID: 0,
                 data: []
@@ -86,28 +94,28 @@ export class Table {
             }
         }
         // insert the data
-        const file = fs.readFileSync(this.filepath, "utf-8");
+        const file = readFileSync(this.filepath, "utf-8");
         const parsed = JSON.parse(file);
         parsed.data.push(data);
-        fs.writeFileSync(this.filepath, JSON.stringify(parsed, null, 2));
-        await this.incrementInsertID(); 
+        writeFileSync(this.filepath, JSON.stringify(parsed, null, 2));
+        await this.incrementInsertID();
         this._mutex.unlock();
         return new RDBRecord(data, this);
     }
     /**
      * Removes a record from the table
-     * @param query 
+     * @param query
      * @returns {number} - the number of rows affected
      */
     async remove(query: RDBRecord): Promise<number> {
         if(this.dropped) throw new QueryError(`Table '${this.name}' no longer exists`)
         this._mutex.lock();
         this.data.splice(this.data.findIndex((item)=>item.id == query.id), 1);
-        const file = fs.readFileSync(this.filepath, "utf-8");
+        const file = readFileSync(this.filepath, "utf-8");
         const parsed = JSON.parse(file);
         const precount = parsed.data.length;
         parsed.data = this.data;
-        fs.writeFileSync(this.filepath, JSON.stringify(parsed, null, 2));
+        writeFileSync(this.filepath, JSON.stringify(parsed, null, 2));
         this._mutex.unlock();
         return precount - parsed.data.length;
     }
@@ -131,7 +139,7 @@ export class Table {
         return await query.find();
     }
     get data(): RDBRecord[] {
-        return JSON.parse(fs.readFileSync(this.filepath, "utf-8")).data.map((item:object) => {
+        return JSON.parse(readFileSync(this.filepath, "utf-8")).data.map((item:object) => {
             return new RDBRecord(item, this);
         });
     }
@@ -166,17 +174,17 @@ export class Table {
         return this.data.length;
     }
     private async getInsertID() {
-        const file = fs.readFileSync(this.filepath, "utf-8");
+        const file = readFileSync(this.filepath, "utf-8");
         const parsed = JSON.parse(file);
         const highestID:number = parsed.lastInsertID;
         return highestID;
     }
     private async incrementInsertID() {
-        const file = fs.readFileSync(this.filepath, "utf-8");
+        const file = readFileSync(this.filepath, "utf-8");
         const parsed = JSON.parse(file);
         const highestID:number = parsed.lastInsertID;
         parsed.lastInsertID = highestID + 1;
-        fs.writeFileSync(this.filepath, JSON.stringify(parsed, null, 2));
+        writeFileSync(this.filepath, JSON.stringify(parsed, null, 2));
         return highestID + 1;
     }
     async findOne(query: Query):Promise<RDBRecord> {
@@ -206,16 +214,16 @@ export class Table {
      */
     drop() {
         this.dropped = true
-        fs.unlinkSync(this.filepath);
+        unlinkSync(this.filepath);
     }
     async subscribe(query: Query) {
         if(query.type != 'fetch') throw new QueryError("Only Fetch Queries can be subscribed")
-        
+
         this.subscriptions.push({ current: query.find(), query });
-        
+
         if(this.subscriptions.length == 1){
             // start watching the file
-            fs.watchFile(this.filepath,{interval: 1000}, () => {
+            watchFile(this.filepath,{interval: 1000}, () => {
                 this.subscriptions.forEach((query)=>{
                     run.bind(this)(query)
                 });
@@ -265,33 +273,36 @@ export class RDatabase {
     directory: string;
     tables: Map<string, Table> = new Map();
     constructor(options: DatabaseOptions) {
+        // We need two cases here:
+        // 1. We are given an array of schemas with a directory
+        // 2. We are given a directory with no schemas
+        // all others throw an error
         if(!options?.schemas?.length && !options?.directory) throw new Error("No schemas or directory provided")
-        if(options.directory){
-            this.directory = options.directory;
-            // get all files in directory
-            const files:string[] = fs.readdirSync(options.directory);
-            // check if the name matches pattern /*_table.json/
-            const TableFiles = files.filter((file)=>file.match(/.*_table.json/));
-            if(TableFiles.length == 0) {
-                throw new DatabaseError("No tables found in "+options.directory);
-            } else {
-                const schemas = files.filter((file)=>{
-                    return file.match(/.*_table.json/)
-                }).map((file)=>{
-                    const filepath = path.resolve(options.directory, file);
-                    const data = JSON.parse(fs.readFileSync(filepath, "utf-8"));
-                    const schema = data.schema;
-                    return [schema,filepath];
-                });
-                schemas.forEach((data)=>{
-                    this.tables.set(data[0].name ,new Table(data[0], data[1] ));
-                });
-            }
-        } else if (options.schemas) {
+        if(!options?.directory) throw new Error("No directory provided")
+
+        this.directory = options.directory;
+        // create the directory if it doesn't exist
+        if(!existsSync(this.directory)) mkdirSync(this.directory);
+        // get all files in directory
+        const files:string[] = readdirSync(options.directory);
+        // check if the name matches pattern /*_table.json/
+        const TableFiles = files.filter((file)=>file.match(/.*_table.json/));
+        if(TableFiles.length > 0) {
+            const schemas = files.filter((file)=>{
+                return file.match(/.*_table.json/)
+            }).map((file)=>{
+                const filepath = path.resolve(options.directory, file);
+                const data = JSON.parse(readFileSync(filepath, "utf-8"));
+                const schema = data.schema;
+                return [schema,filepath];
+            });
+            schemas.forEach((data)=>{
+                this.tables.set(data[0].name ,new Table(data[0], data[1] ));
+            });
+        }
+        if (options.schemas) {
             this.directory = path.resolve(__dirname, "./");
             this.tables = this.create(options.schemas);
-        } else{
-            throw new Error("No schemas or directory provided")
         }
     }
     /**
@@ -312,5 +323,5 @@ export class RDatabase {
     drop(table: string) {
         this.tables.get(table)?.drop();
         this.tables.delete(table);
-    }   
+    }
 }

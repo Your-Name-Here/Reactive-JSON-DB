@@ -13,13 +13,13 @@ export type TableSchema = {
 };
 type DatabaseOptions = {
     schemas?: TableSchema[];
-    directory?: string;
+    directory: string;
 };
 export type Column = {
     name: string;
     autoIncrement?: boolean;
     type: ValidationType;
-    enum?: Array<string | number | boolean>;
+    enum?: (string | number | boolean)[];
     default?: any;
     required?: boolean;
     format?: string;

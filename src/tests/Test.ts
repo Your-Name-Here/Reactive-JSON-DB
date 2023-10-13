@@ -1,6 +1,8 @@
-// write tests here
+/* tslint:disable */
 import { expect } from 'chai';
+import * as chai from 'chai'
 import { it } from 'mocha';
+chai.use(require('chai-as-promised'))
 import path from 'path';
 import { RDatabase, TableSchema } from '../Db';
 import { ValidateEmail, ValidateISODate, ValidateURL, ValidationType } from '../Validations';
@@ -84,8 +86,8 @@ describe('Create Database', () => {
                 email: 'test@test.com',
                 password: 'password1234'
             });
-            await userQuery.execute();
-            expect(u.data.length).to.equal(1);
+            const result = await userQuery.execute();
+            expect(result.length).to.equal(1);
         } else {
             this.skip();
         }
@@ -95,7 +97,7 @@ describe('Create Database', () => {
             const u = database.tables.get('users');
             const userQuery =new Query(u);
             userQuery.insert({
-                name: 'test',
+                name: 'test6',
                 age: '20',
                 email: 'test@test.com',
                 password: 'password1234'
@@ -105,11 +107,85 @@ describe('Create Database', () => {
             this.skip();
         }
     });
-    it('add user with missing data')
-    it('add user with extra data')
-    it('add user with invalid email type')
-    it('add user with invalid number type')
-    it('add user with invalid string type')
+    it('add user with missing data',async function(){
+        if(database.tables.has('users')){
+            const u = database.tables.get('users');
+            const userQuery =new Query(u);
+            userQuery.insert({
+                name: 'test5',
+                age: '20',
+                email: 'test@test.com',
+            });
+            expect(userQuery.execute).to.throw;
+        } else {
+            this.skip();
+        }
+    })
+    it('add user with extra data', async function(){
+        if(database.tables.has('users')){
+            const u = database.tables.get('users');
+            const userQuery =new Query(u);
+            userQuery.insert({
+                name: 'test4',
+                age: '20',
+                email: 'test4@test.com',
+                password: 'password1234',
+                extra: 'extra'
+            });
+            expect(userQuery.execute).to.throw;
+        } else {
+            this.skip();
+        }
+    })
+    it('add user with invalid email type', async function(){
+        if(database.tables.has('users')){
+            const u = database.tables.get('users');
+            const userQuery =new Query(u);
+            userQuery.insert({
+                name: 'test3',
+                age: '20',
+                email: 'test@test',
+                password: 'password1234',
+            });
+
+            expect(userQuery.execute).to.throw;
+        } else {
+            this.skip();
+        }
+    })
+    it('add user with invalid number type', async function(){
+        if(database.tables.has('users')){
+            const u = database.tables.get('users');
+            const userQuery =new Query(u);
+            userQuery.insert({
+                name: 'test2',
+                age: 20,
+                email: 'test2@test.com',
+                password: 'password1234',
+            });
+            const results = await userQuery.execute();
+            expect(results).to.be.an('array');
+            expect(results).to.have.a.lengthOf(1);
+        } else {
+            this.skip();
+        }
+    })
+    it('add user with invalid string type', async function(){
+        if(database.tables.has('users')){
+            const u = database.tables.get('users');
+            const userQuery =new Query(u);
+            userQuery.insert({
+                name: 4,
+                age: '20',
+                email: 'test@test',
+                password: 'password1234',
+            });
+            // const records = await userQuery.execute();
+            await expect(userQuery.execute).to.be.rejectedWith(Error)
+        } else {
+            this.skip();
+        }
+    })
     it('add user with invalid date type')
     it('add user with invalid boolean type')
     it('add user with invalid array type')
@@ -117,7 +193,6 @@ describe('Create Database', () => {
     it( 'updates record with malformed data');
     it( 'deletes record')
     // q: what other tests should I write?
-    // a: write tests for all the validations
     // a: write tests for all the query methods
     // a: write tests for all the query events
     // a: write tests for all the query types

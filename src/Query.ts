@@ -82,7 +82,7 @@ export class Query extends EventEmitter {
      */
     public async subscribe() {
         // throw new QueryError("Not Implemented");
-        if(this.type != 'fetch') throw new QueryError(`Only fetch queries can be subscribed to. This query type: '${ this.type }'.`);
+        if(this.type != 'fetch') throw new QueryError(`Only fetch queries can be subscribed to. This query type: '${ this.type }'.`, this.toString());
         this.table.subscribe(this);
     }
     public orderBy(column: string, direction: 'ASC'|'DESC') {
@@ -134,7 +134,7 @@ export class Query extends EventEmitter {
         if(this.type == 'fetch') return this.find();
         if(this.type == 'insert') {
             if(this.data) return [await this.table.insert(this.data)];
-            else throw new QueryError("No data to insert");
+            else throw new QueryError("No data to insert", this.toString());
         }
         if(this.type == 'update') {
             const records = this.table.data.filter((item) => this.satisfiesRuleset(item, this.query));

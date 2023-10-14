@@ -97,7 +97,7 @@ export class RDBRecord extends Map<string, any> {
             super.set(column, value);
             if( autosave ) this.save();
         } else {
-            throw new QueryError(`Value ${value} is not valid for column ${column}`);
+            throw new QueryError(`Value ${value} is not valid for column ${column}`, `update ${this.table.name} set ${column} = ${value} where id = ${this.id}`);
         }
     }
     toJSON(){

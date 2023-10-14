@@ -105,6 +105,9 @@ export class Query extends EventEmitter {
         this.type = 'delete';
         return this;
     }
+    public count() {
+        return this.find().length;
+    }
     /**
      * Limit the operation to a certain number of records.
      */
@@ -119,7 +122,8 @@ export class Query extends EventEmitter {
      * @todo implement unsubscribe
      */
     public async subscribe() {
-        if(this.type != 'fetch') throw new QueryError(`Only fetch queries can be subscribed to. This query type: '${ this.type }'.`);
+        // throw new QueryError("Not Implemented");
+        if(this.type != 'fetch') throw new QueryError(`Only fetch queries can be subscribed to. This query type: '${ this.type }'.`, this.toString());
         this.table.subscribe(this);
     }
     public orderBy(column: string, direction: 'ASC'|'DESC') {
@@ -173,6 +177,8 @@ export class Query extends EventEmitter {
     public async execute(){
         if(this.type == 'fetch') return this.find();
         if(this.type == 'insert') {
+            if(this.data) return [await this.table.insert(this.data)];
+            else throw new QueryError("No data to insert", this.toString());
             const ret:RDBRecord[] = [];
             if(this.data.length) {
                 for(const record of this.data){
@@ -183,12 +189,31 @@ export class Query extends EventEmitter {
             } else throw new QueryError("No data to insert");
         }
         if(this.type == 'update') {
-            throw new QueryError("Update Not Implemented");
+            const records = this.table.data.filter((item) => this.satisfiesRuleset(item, this.query));
+            if(records) {
+                const max = this._limit || records.length;
+                for(var i = 1; i < max; i++) {
+                    for(const d of this.data){
+                        records[i].set(d.name, d.value);
+                    }
+                    records[i].save();
+                }
+            }
         }
         if(this.type == 'delete') {
-            throw new QueryError("Delete Not Implemented");
+            const ret = []
+            const max = this._limit || this.table.data.length;
+            for(var i = 0; i < max; i++) {
+                let record = this.table.data[i]
+                record.remove();
+                ret.push(record);
+            }
+            return ret;
         }
         return [];
+    }
+    toString() {
+        return `${ this.type } query on table ${ this.table.name } with ruleset ${ JSON.stringify(this.query) }`
     }
 }
 export type InsertQuery = Record<string, any>

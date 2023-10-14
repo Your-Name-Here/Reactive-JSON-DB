@@ -11,12 +11,16 @@ export class DatabaseError extends RDBError {
     }
 }
 export class QueryError extends RDBError {
-    constructor(message:string) {
+    query:string;
+    constructor(message:string, query:string) {
         super(message);
+        this.query = query;
     }
 }
 export class SchemaError extends RDBError {
-    constructor(message:string) {
+    schema: any;
+    constructor(message:string, schema: any) {
         super(message);
+        this.schema = schema;
     }
 }

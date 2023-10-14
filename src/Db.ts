@@ -67,8 +67,8 @@ export class Table {
         }
         this.columns = schema.columns;
     }
-    async insert(data:InsertData|RDBRecord) {
-        if(this.dropped) throw new QueryError(`Table '${this.name}' no longer exists`)
+    async insert(data:InsertData) {
+        if(this.dropped) throw new QueryError(`Table '${this.name}' no longer exists`, `insert into ${this.name} (${Object.keys(data).join(', ')}) values (${Object.values(data).join(', ')}`)
         await this._mutex.lock();
         // validate data against schema
         const columns = Object.keys(data);
@@ -79,12 +79,18 @@ export class Table {
         data.updatedAt = new Date().toISOString();
         const requiredColumns = this.schema.columns.filter( c=>c.required);
         requiredColumns.forEach(column => {
-            if(!columns.includes(column.name)) throw new QueryError(`Error inserting into table ${this.name}: Column '${column.name}' is required but was not provided. This is case-sensitive. Valid columns are: ${this.schema.columns.map(c=>c.name).join(', ')}`)
+            if(!columns.includes(column.name)) throw new QueryError(`Error inserting into table ${this.name}: Column '${column.name}' is required but was not provided. This is case-sensitive. Valid columns are: ${this.schema.columns.map(c=>c.name).join(', ')}`, `insert into ${this.name} (${Object.keys(data).join(', ')}) values (${Object.values(data).join(', ')}`)
         });
         for(const columnName of this.schema.columns.map((item)=>item.name)){
             const column = this.schema.columns.filter(c=>c.name == columnName)[0];
             if(!this.columnNames.includes(columnName)) throw new Error(`Error inserting into table ${this.name}: Column '${columnName}' does not exist in table ${this.name}. This is case-sensitive. Valid columns are: ${this.columnNames.join(', ')}`)
-            if(!this.validate(data[columnName], column)) throw new QueryError(`Error inserting into table ${this.name}: Column '${columnName}' failed validation`)
+                if(column?.unique){
+                    const found = this.data.find((item)=>item.get(columnName) == data[columnName]);
+                    if(found) throw new QueryError(`Error inserting into table ${this.name}: Column '${columnName}' is unique but a record with this value already exists`, `insert into ${this.name} (${Object.keys(data).join(', ')}) values (${Object.values(data).join(', ')}`)
+                }
+
+            if(!this.validate(data[columnName], column)) throw new QueryError(`Error inserting into table ${this.name}: Column '${columnName}' failed validation`, `insert into ${this.name} (${Object.keys(data).join(', ')}) values (${Object.values(data).join(', ')}`)
+
             if(column.unique){
                 const found = this.data.find((item)=>{
                     // @ts-ignore
@@ -108,7 +114,7 @@ export class Table {
      * @returns {number} - the number of rows affected
      */
     async remove(query: RDBRecord): Promise<number> {
-        if(this.dropped) throw new QueryError(`Table '${this.name}' no longer exists`)
+        if(this.dropped) throw new QueryError(`Table '${this.name}' no longer exists`, `delete from ${this.name} where id = ${query.id}`)
         this._mutex.lock();
         this.data.splice(this.data.findIndex((item)=>item.id == query.id), 1);
         const file = readFileSync(this.filepath, "utf-8");
@@ -120,7 +126,7 @@ export class Table {
         return precount - parsed.data.length;
     }
     async update(query:Query, data: InsertQuery) {
-        if(this.dropped) throw new QueryError(`Table '${this.name}' no longer exists`)
+        if(this.dropped) throw new QueryError(`Table '${this.name}' no longer exists`, `update ${this.name} set ${Object.keys(data).map((key)=>`${key} = ${data[key]}`).join(', ')} where ${query.toString()}`)
         await this._mutex.lock();
         const records = await this.find(query);
         let affectedRows = 0;
@@ -135,7 +141,7 @@ export class Table {
         return affectedRows
     }
     async find(query: Query) {
-        if(this.dropped) throw new QueryError(`Table '${this.name}' no longer exists`)
+        if(this.dropped) throw new QueryError(`Table '${this.name}' no longer exists`, query.toString())
         return await query.find();
     }
     get data(): RDBRecord[] {
@@ -214,11 +220,15 @@ export class Table {
      */
     drop() {
         this.dropped = true
-        unlinkSync(this.filepath);
+        fs.unlinkSync(this.filepath);
+        // Explicit clean up for garbage collection
+        this.subscriptions.forEach((sub)=>{
+            sub.query.removeAllListeners();
+        })
     }
     async subscribe(query: Query) {
-        if(query.type != 'fetch') throw new QueryError("Only Fetch Queries can be subscribed")
-
+        if(query.type != 'fetch') throw new QueryError("Only Fetch Queries can be subscribed", query.toString());
+        
         this.subscriptions.push({ current: query.find(), query });
 
         if(this.subscriptions.length == 1){

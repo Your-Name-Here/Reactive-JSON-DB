@@ -209,6 +209,10 @@ export class Table {
     drop() {
         this.dropped = true
         fs.unlinkSync(this.filepath);
+        // Explicit clean up for garbage collection
+        this.subscriptions.forEach((sub)=>{
+            sub.query.removeAllListeners();
+        })
     }
     async subscribe(query: Query) {
         if(query.type != 'fetch') throw new QueryError("Only Fetch Queries can be subscribed")

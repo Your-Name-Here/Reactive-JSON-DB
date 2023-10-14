@@ -66,6 +66,10 @@ export class Query extends EventEmitter {
     }
     public delete() {
         this.type = 'delete';
+        return this;
+    }
+    public count() {
+        return this.find().length;
     }
     public limit(limit: number) {
         this._limit = limit;
@@ -129,16 +133,35 @@ export class Query extends EventEmitter {
         // throw new QueryError("Not Implemented");
         if(this.type == 'fetch') return this.find();
         if(this.type == 'insert') {
-            if(this.data) return await this.table.insert(this.data);
+            if(this.data) return [await this.table.insert(this.data)];
             else throw new QueryError("No data to insert");
         }
         if(this.type == 'update') {
-            throw new QueryError("Update Not Implemented");
+            const records = this.table.data.filter((item) => this.satisfiesRuleset(item, this.query));
+            if(records) {
+                const max = this._limit || records.length;
+                for(var i = 1; i < max; i++) {
+                    for(const d of this.data){
+                        records[i].set(d.name, d.value);
+                    }
+                    records[i].save();
+                }
+            }
         }
         if(this.type == 'delete') {
-            throw new QueryError("Delete Not Implemented");
+            const ret = []
+            const max = this._limit || this.table.data.length;
+            for(var i = 0; i < max; i++) {
+                let record = this.table.data[i]
+                record.remove();
+                ret.push(record);
+            }
+            return ret;
         }
         return [];
+    }
+    toString() {
+        return `${ this.type } query on table ${ this.table.name } with ruleset ${ JSON.stringify(this.query) }`
     }
 }
 export type InsertQuery = Record<string, any>

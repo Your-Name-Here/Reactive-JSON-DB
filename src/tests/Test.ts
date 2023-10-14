@@ -4,7 +4,7 @@ import { it } from 'mocha';
 import path from 'path';
 import { RDatabase, TableSchema } from '../Db';
 import { ValidateEmail, ValidateISODate, ValidateURL, ValidationType } from '../Validations';
-import { Query } from '../Query';
+import { Operators, Query } from '../Query';
 
 const testsPath = path.resolve(__dirname, '../tests' );
 let database:any;
@@ -115,7 +115,23 @@ describe('Create Database', () => {
     it('add user with invalid array type')
     it( 'updates record');
     it( 'updates record with malformed data');
-    it( 'deletes record')
+    it( 'deletes record', async function(){
+        if(database.tables.has('users')){
+            const u = database.tables.get('users');
+            const userQuery =new Query(u);
+            const prior = u.data.length;
+            userQuery.where({
+                column: 'name',
+                op: Operators.EQ,
+                value: 'test'
+            });
+            const records = await userQuery.delete().execute();
+            if(records.length !== 1) throw new Error("deletion .execute() returned no records");
+            expect( prior - u.data.length ).to.equal(1);
+        } else {
+            this.skip();
+        }
+    })
     // q: what other tests should I write?
     // a: write tests for all the validations
     // a: write tests for all the query methods
@@ -125,7 +141,6 @@ describe('Create Database', () => {
     // a: write tests for all the query rulesets
     // a: write tests for all the query rules
     // a: write tests for all the query sorting
-    // a: write tests for all the query pagination
     // a: write tests for all the query subscriptions
 })
 describe('Validations', () => {
